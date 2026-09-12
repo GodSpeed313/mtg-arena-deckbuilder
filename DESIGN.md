@@ -1,7 +1,8 @@
 # MTG Arena Deck Builder — Design
 
-Status: **draft for review.** No implementation beyond the two spike scripts
-(`arena_log.py`, `mtga_cards.py`), which this design supersedes and absorbs.
+Status: **active implementation.** The canonical card/query foundation and
+Phase 1 Offline Deck Workbench are implemented. Current limitations and the
+next build boundary are tracked in `README.md`.
 
 ---
 
@@ -327,8 +328,9 @@ mtgadb/
   query.py              CardQueryEngine
   modes.py              OperatingMode
 services/
-  deckbuilder.py        LLM boundary lives here, nowhere else
   exporter.py           MTGA import/export format
+  validator.py          deterministic deck rules and resource checks
+workbench.py             offline command-line interface
 ```
 
 Dependencies point downward only. `query.py` never imports a provider;
@@ -374,14 +376,14 @@ Claude should never need to wonder whether you own a card.
 
 ## 8. Build order
 
-1. `model.py` + `providers/base.py`
-2. `canonical.py` + `ArenaSQLiteCardProvider` → populated `cards` table
-3. **Verify the oracle-text unknown (§1)** — gates §5 text predicates
-4. `query.py` — the foundation
-5. `player_log.py` providers → inventory, decks, ownership diagnostics
-6. `modes.py` → `UNLIMITED` and `WILDCARD_BUDGET` become usable
-7. `services/deckbuilder.py` — first LLM call
-8. `services/exporter.py`
+1. [x] `model.py` + `providers/base.py`
+2. [x] `canonical.py` + `ArenaSQLiteCardProvider` → populated `cards` table
+3. [x] **Verify the oracle-text unknown (§1)** — gates §5 text predicates
+4. [x] `query.py` — the foundation
+5. [x] `modes.py` + deck import/export + deterministic validation
+6. [ ] `player_log.py` providers → inventory, decks, format diagnostics
+7. [ ] Manual ownership import workflow
+8. [ ] `services/deckbuilder.py` — first LLM call
 
 Steps 1–6 involve no LLM and no network.
 
