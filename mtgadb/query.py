@@ -153,28 +153,22 @@ class CardQueryEngine:
 
         if format:
             # A card is legal if one of its printings is in a legal set, it is
-            # not banned, and -- where the format uses an allow-list -- it is
-            # on it. All keyed by title_id, as Arena states legality.
-            joins += """
-                JOIN printings p ON p.title_id = c.title_id
-                JOIN format_sets fs
-                  ON fs.set_code = p.set_code AND fs.format_name = ?
-            """
-            params.insert(0, format)
+            # explicitly allowed as an exception, and is not disqualified.
+            # All title rules are keyed by title_id, as Arena states legality.
+            where.append(
+                "(EXISTS (SELECT 1 FROM printings fp JOIN format_sets fs "
+                "ON fs.set_code = fp.set_code WHERE fp.title_id = c.title_id "
+                "AND fs.format_name = ?) OR EXISTS (SELECT 1 FROM "
+                "format_title_rules ar WHERE ar.format_name = ? "
+                "AND ar.title_id = c.title_id AND ar.rule = 'allowed'))"
+            )
+            params.extend([format, format])
             where.append(
                 "NOT EXISTS (SELECT 1 FROM format_title_rules r "
                 "WHERE r.format_name = ? AND r.title_id = c.title_id "
-                "AND r.rule IN ('banned','suppressed'))"
+                "AND r.rule IN ('banned','suppressed','suspended'))"
             )
             params.append(format)
-            where.append(
-                "(NOT EXISTS (SELECT 1 FROM format_title_rules r2 "
-                "WHERE r2.format_name = ? AND r2.rule = 'allowed') "
-                "OR EXISTS (SELECT 1 FROM format_title_rules r3 "
-                "WHERE r3.format_name = ? AND r3.rule = 'allowed' "
-                "AND r3.title_id = c.title_id))"
-            )
-            params.extend([format, format])
 
         if owned_only:
             where.append(

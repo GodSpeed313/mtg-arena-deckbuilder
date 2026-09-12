@@ -381,9 +381,10 @@ Claude should never need to wonder whether you own a card.
 3. [x] **Verify the oracle-text unknown (§1)** — gates §5 text predicates
 4. [x] `query.py` — the foundation
 5. [x] `modes.py` + deck import/export + deterministic validation
-6. [ ] `player_log.py` providers → inventory, decks, format diagnostics
-7. [ ] Manual ownership import workflow
-8. [ ] `services/deckbuilder.py` — first LLM call
+6. [x] Extracted-JSON format provider + schema-v2 format persistence
+7. [ ] `player_log.py` providers → inventory and deck diagnostics
+8. [ ] Manual ownership import workflow
+9. [ ] `services/deckbuilder.py` — first LLM call
 
 Steps 1–6 involve no LLM and no network.
 
@@ -394,14 +395,19 @@ Steps 1–6 involve no LLM and no network.
 **Closed:** oracle text *is* reconstructable (§1) — this was the gating
 assumption for the query engine, and it held.
 
-**Closed: format legality is fully derivable offline.** The `Formats` payload
-carries 138 formats, each with `legalSets`, `mainDeckQuota`, `sideBoardQuota`,
+**Closed: explicit format legality data is derivable offline.** The September
+12, 2026 `Formats` payload carries 142 formats, each with `mainDeckQuota` and
+deck-zone quotas. `legalSets` is present on 136 formats. Optional keys include
 `commandZoneQuota`, and — as *optional* keys present only where they apply —
 `bannedTitleIds`, `allowedTitleIds`, `supressedTitleIds` (Wizards' spelling),
 `individualCardQuotas`, `AllowedCommanderTitleIds`, `useRebalancedCards`.
-Verified by resolving ban lists to names: Standard 11 bans (Cori-Steel Cutter,
+Verified by resolving ban lists to names: Standard 14 bans (Cori-Steel Cutter,
 Heartfire Hero, Monstrous Rage, Vivi Ornitier…), Historic 77 (Brainstorm,
 Blood Moon, Ancient Tomb, Chrome Mox…).
+
+`allowedTitleIds` is an exception list for titles outside `legalSets`, not an
+exclusive allowlist; treating Timeless's five entries as its entire card pool
+incorrectly rejects ordinary legal cards.
 
 Two consequences: **bans are keyed by `TitleId`**, independently confirming the
 two-level identity model of §3; and this payload lives in `Player.log`, so a

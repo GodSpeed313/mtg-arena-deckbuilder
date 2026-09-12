@@ -15,13 +15,14 @@ Implemented:
 - Arena text deck import and export
 - Deck-size, sideboard, commander, copy-limit, and color-identity validation
 - Basic-land and card-specific copy-limit exceptions
-- Optional format ban, allow-list, suppressed-card, and legal-set validation
+- Arena format-payload ingestion and schema-v2 format persistence
+- Ban, suppression, suspension, explicit exception, legal-set, per-card quota,
+  commander-allowlist, and command-zone validation
 - `unlimited`, `full_collection`, and `wildcard_budget` modes
 - Structured import and validation diagnostics
 
 Still planned:
 
-- Current Arena format payload ingestion
 - Player log providers for decks, wildcards, and currency
 - Manual collection-import workflow
 - Strategy and synergy recommendation layer
@@ -54,6 +55,16 @@ Validate against a color identity:
 ```powershell
 python workbench.py validate my_deck.txt --colors WU
 ```
+
+Load a freshly extracted Arena `Formats` JSON array, then validate by format:
+
+```powershell
+python sync_formats.py arena-formats-2026-09-12.json
+python workbench.py validate my_deck.txt --format Standard
+```
+
+Only extract the `Formats` array. Do not copy the complete `Player.log` into
+the project because it can contain unrelated player data.
 
 Check a wildcard budget:
 
@@ -91,6 +102,8 @@ python -m unittest discover -v
 ```
 
 The build produces `current.db` and a dated database under `snapshots/`.
+Re-run `sync_formats.py` after rebuilding because format rules originate in
+`Player.log`, not Arena's card database.
 
 ## Architecture boundary
 
@@ -99,4 +112,3 @@ sizes, wildcard arithmetic, and export formatting. A future language-model
 service will receive only a pre-filtered candidate pool and will own strategy,
 synergy reasoning, and explanation. Its output must pass this deterministic
 validator before it can be accepted or exported.
-

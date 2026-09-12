@@ -6,6 +6,7 @@ import unittest
 from mtgadb import canonical
 from mtgadb.model import Card, CardPrinting, Collection, Format, Inventory
 from mtgadb.modes import OperatingMode
+from mtgadb.query import CardQueryEngine
 from services.exporter import export_arena_deck, import_arena_deck
 from services.validator import DeckRules, validate_deck
 
@@ -119,11 +120,45 @@ Sideboard
         report = validate_deck(deck, self.con, format=format)
         self.assertNotIn("format_illegal_set", {e.code for e in report.errors})
 
+    def test_allowed_title_is_exception_not_exclusive_allowlist(self) -> None:
+        deck = import_arena_deck("4 Blue Spell\n56 Forest", self.con).deck
+        format = Format(
+            "Test", legal_sets=frozenset({"TST"}),
+            allowed_title_ids=frozenset({3}),
+        )
+        report = validate_deck(deck, self.con, format=format)
+        self.assertNotIn("format_illegal_set", {e.code for e in report.errors})
+        canonical.load_formats(self.con, {format.name: format})
+        names = {card.name for card in CardQueryEngine(self.con).find(format="Test")}
+        self.assertIn("Blue Spell", names)
+        self.assertIn("Forest", names)
+
     def test_format_ban(self) -> None:
         deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck
         format = Format("Test", banned_title_ids=frozenset({1}))
         report = validate_deck(deck, self.con, format=format)
         self.assertIn("format_banned", {e.code for e in report.errors})
+
+    def test_format_quota_and_suspension(self) -> None:
+        deck = import_arena_deck("4 Test Bolt\n4 Blue Spell\n52 Forest", self.con).deck
+        format = Format(
+            "Test", individual_card_quotas={1: 1},
+            suspended_title_ids=frozenset({3}),
+        )
+        codes = {e.code for e in validate_deck(deck, self.con, format=format).errors}
+        self.assertIn("copy_limit", codes)
+        self.assertIn("format_suspended", codes)
+
+    def test_commander_minimum_and_allowlist(self) -> None:
+        deck = import_arena_deck("59 Forest\n\nCommander\n1 Blue Spell", self.con).deck
+        format = Format(
+            "Brawl", min_deck_size=59, max_deck_size=59,
+            min_command_zone=1, max_command_zone=1,
+            allowed_commander_title_ids=frozenset({1}),
+        )
+        report = validate_deck(deck, self.con, format=format)
+        self.assertIn("commander_not_allowed", {e.code for e in report.errors})
+        self.assertNotIn("commander_size", {e.code for e in report.errors})
 
     def test_full_collection_requires_data(self) -> None:
         deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck

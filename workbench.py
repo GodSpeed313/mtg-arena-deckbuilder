@@ -48,18 +48,29 @@ def validate_command(args: argparse.Namespace) -> int:
         )
         for issue in parsed.issues:
             print(f"IMPORT line {issue.line}: {issue.message}")
-        rules = DeckRules(
-            min_main=args.min_main,
-            max_main=args.max_main,
-            max_sideboard=args.max_sideboard,
-            max_commanders=args.max_commanders,
-            allowed_colors=(frozenset(args.colors.upper()) if args.colors else None),
+        format = canonical.get_format(con, args.format) if args.format else None
+        if args.format and format is None:
+            raise ValueError(
+                f"format {args.format!r} is not loaded; run sync_formats.py first"
+            )
+        colors = frozenset(args.colors.upper()) if args.colors else None
+        rules = (
+            DeckRules.from_format(format, allowed_colors=colors)
+            if format else DeckRules(
+                min_main=args.min_main,
+                max_main=args.max_main,
+                max_sideboard=args.max_sideboard,
+                min_commanders=args.min_commanders,
+                max_commanders=args.max_commanders,
+                allowed_colors=colors,
+            )
         )
         report = validate_deck(
             parsed.deck,
             con,
             mode=OperatingMode(args.mode),
             rules=rules,
+            format=format,
             collection=_collection(args.collection),
             inventory=_wildcards(args.wildcard),
         )
@@ -118,9 +129,11 @@ def parser() -> argparse.ArgumentParser:
         help="available wildcard as rarity=count; repeat for each rarity",
     )
     validate.add_argument("--colors", help="allowed WUBRG color identity")
+    validate.add_argument("--format", help="name of a format loaded in current.db")
     validate.add_argument("--min-main", type=int, default=60)
     validate.add_argument("--max-main", type=int, default=250)
     validate.add_argument("--max-sideboard", type=int, default=15)
+    validate.add_argument("--min-commanders", type=int, default=0)
     validate.add_argument("--max-commanders", type=int, default=0)
     validate.set_defaults(func=validate_command)
 
@@ -147,4 +160,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

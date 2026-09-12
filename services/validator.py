@@ -31,6 +31,7 @@ class DeckRules:
     min_main: int = 60
     max_main: int = 250
     max_sideboard: int = 15
+    min_commanders: int = 0
     max_commanders: int = 0
     copy_limit: int = 4
     allowed_colors: frozenset[str] | None = None
@@ -43,6 +44,7 @@ class DeckRules:
             min_main=format.min_deck_size,
             max_main=format.max_deck_size,
             max_sideboard=format.max_sideboard,
+            min_commanders=format.min_command_zone,
             max_commanders=format.max_command_zone,
             allowed_colors=allowed_colors,
         )
@@ -150,10 +152,11 @@ def validate_deck(
             f"Sideboard has {sizes['sideboard']} cards; maximum is {rules.max_sideboard}.",
             "sideboard",
         ))
-    if sizes["commander"] > rules.max_commanders:
+    if not rules.min_commanders <= sizes["commander"] <= rules.max_commanders:
         errors.append(ValidationIssue(
             "commander_size",
-            f"Command zone has {sizes['commander']} cards; maximum is {rules.max_commanders}.",
+            f"Command zone has {sizes['commander']} cards; expected "
+            f"{rules.min_commanders}-{rules.max_commanders}.",
             "commander",
         ))
 
@@ -166,6 +169,9 @@ def validate_deck(
     for title_id, quantity in by_title.items():
         row = next(r for r in rows.values() if r["title_id"] == title_id)
         limit = _copy_limit(row, rules.copy_limit)
+        format_limit = format.individual_card_quotas.get(title_id) if format else None
+        if format_limit is not None:
+            limit = format_limit if limit is None else min(limit, format_limit)
         if limit is not None and quantity > limit:
             errors.append(ValidationIssue(
                 "copy_limit",
@@ -189,9 +195,9 @@ def validate_deck(
                     "format_banned", f"{row['name']} is banned or suppressed in {format.name}.",
                     title_id=title_id,
                 ))
-            if format.allowed_title_ids is not None and title_id not in format.allowed_title_ids:
+            if title_id in format.suspended_title_ids:
                 errors.append(ValidationIssue(
-                    "format_not_allowed", f"{row['name']} is not allowed in {format.name}.",
+                    "format_suspended", f"{row['name']} is suspended in {format.name}.",
                     title_id=title_id,
                 ))
             if format.legal_sets:
@@ -200,12 +206,28 @@ def validate_deck(
                     + ",".join("?" for _ in format.legal_sets) + ") LIMIT 1",
                     (title_id, *format.legal_sets),
                 ).fetchone()
-                if not legal_printing:
+                explicitly_allowed = (
+                    format.allowed_title_ids is not None
+                    and title_id in format.allowed_title_ids
+                )
+                if not legal_printing and not explicitly_allowed:
                     errors.append(ValidationIssue(
                         "format_illegal_set",
                         f"{row['name']} has no printing legal in {format.name}.",
                         title_id=title_id,
                     ))
+
+    if format and format.allowed_commander_title_ids is not None:
+        for arena_id in deck.commander:
+            if arena_id not in rows:
+                continue
+            title_id = rows[arena_id]["title_id"]
+            if title_id not in format.allowed_commander_title_ids:
+                errors.append(ValidationIssue(
+                    "commander_not_allowed",
+                    f"{rows[arena_id]['name']} is not an allowed commander in {format.name}.",
+                    "commander", title_id,
+                ))
 
     owned = collection.cards if collection else {}
     required_by_printing: collections.Counter[int] = collections.Counter()

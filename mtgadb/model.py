@@ -110,14 +110,26 @@ class Format:
 
     name: str
     legal_sets: frozenset[str] = frozenset()
+    filter_sets: frozenset[str] = frozenset()
     banned_title_ids: frozenset[int] = frozenset()
-    allowed_title_ids: frozenset[int] | None = None  # None = no allow-list
+    # Explicit legality exceptions for titles outside legal_sets; not an
+    # exclusive allowlist (Timeless has only a handful of these).
+    allowed_title_ids: frozenset[int] | None = None
     suppressed_title_ids: frozenset[int] = frozenset()
+    suspended_title_ids: frozenset[int] = frozenset()
+    allowed_commander_title_ids: frozenset[int] | None = None
+    individual_card_quotas: dict[int, int] = field(default_factory=dict)
+    rarity_card_quotas: dict[int, int | None] = field(default_factory=dict)
     min_deck_size: int = 60
     max_deck_size: int = 250
     max_sideboard: int = 15
+    min_command_zone: int = 0
     max_command_zone: int = 0
-    uses_rebalanced_cards: bool = False
+    uses_rebalanced_cards: bool | None = None
+    format_type_internal: int | None = None
+    card_count_restriction_internal: int | None = None
+    sideboard_behavior_internal: int | None = None
+    color_restrictions_internal: tuple[frozenset[int], ...] = ()
 
 
 # ------------------------------------------------------------ diagnostics

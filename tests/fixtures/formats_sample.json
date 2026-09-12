@@ -1,0 +1,40 @@
+[
+  {
+    "name": "Standard",
+    "FormatTypeInternal": 1,
+    "mainDeckQuota": {"min": 60, "max": 250},
+    "sideBoardQuota": {"max": 15},
+    "commandZoneQuota": {},
+    "legalSets": ["TST"],
+    "filterSets": ["TST"],
+    "bannedTitleIds": [3]
+  },
+  {
+    "name": "Brawl",
+    "FormatTypeInternal": 2,
+    "mainDeckQuota": {"min": 59, "max": 59},
+    "sideBoardQuota": {"max": 1},
+    "commandZoneQuota": {"min": 1, "max": 1},
+    "legalSets": ["TST"],
+    "filterSets": ["TST"],
+    "AllowedCommanderTitleIds": [1],
+    "CardCountRestrictionInternal": 1,
+    "SideboardBehaviorInternal": 1
+  },
+  {
+    "name": "Timeless",
+    "FormatTypeInternal": 3,
+    "mainDeckQuota": {"min": 60, "max": 250},
+    "sideBoardQuota": {"max": 15},
+    "commandZoneQuota": {},
+    "legalSets": ["TST", "OLD"],
+    "filterSets": ["TST"],
+    "allowedTitleIds": [1, 2, 3],
+    "supressedTitleIds": [2],
+    "suspendedTitleIds": [3],
+    "individualCardQuotas": {"1": {"max": 1}},
+    "RarityPerCardQuotasInternal": {"0": {"max": 4}, "3": {}},
+    "useRebalancedCards": true,
+    "RestrictToColorIdentityInternal": [{"Colors": [1, 2]}]
+  }
+]
