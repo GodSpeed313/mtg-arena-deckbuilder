@@ -1,0 +1,118 @@
+Privacy-safe fixture: account/request/deck identifiers and user-created deck names are synthetic/redacted.
+Some non-identifying structural/sample values reflect observed Arena payloads.
+DETAILED LOGS: ENABLED
+[UnityCrossThreadLogger]9/13/2026 8:08:29 PM
+<== StartHook(fake-request-start)
+{
+  "InventoryInfo": {
+    "WildCardCommons": 29,
+    "WildCardUnCommons": 29,
+    "WildCardRares": 16,
+    "WildCardMythics": 17,
+    "Gold": 2400,
+    "Gems": 250,
+    "TotalVaultProgress": 621,
+    "WcTrackPosition": 1,
+    "SeqId": 1,
+    "Cosmetics": {
+      "ArtStyles": [
+        {
+          "ArtId": 999999
+        }
+      ]
+    }
+  },
+  "ServerTimeInternal": "2026-09-14T00:08:29.703840100Z",
+  "DeckSummariesCacheVersion": -1756407444,
+  "DecksCacheVersion": 796858945,
+  "DeckSummaries": [
+    {
+      "DeckIdInternal": "fake-deck-alpha",
+      "Name": "Synthetic Alpha",
+      "Attributes": [
+        {
+          "name": "Format",
+          "value": "Standard"
+        },
+        {
+          "name": "LastUpdated",
+          "value": "\"2026-09-13T20:00:00-04:00\""
+        },
+        {
+          "name": "favorite",
+          "value": "False"
+        }
+      ],
+      "DeckTileId": 101,
+      "PreferredCosmetics": {}
+    },
+    {
+      "DeckIdInternal": "fake-deck-empty",
+      "Name": "Synthetic Empty",
+      "Attributes": []
+    },
+    {
+      "DeckIdInternal": "fake-deck-explicit",
+      "Name": "Synthetic Explicit",
+      "Attributes": []
+    }
+  ],
+  "DecksInternal": {
+    "fake-deck-alpha": {
+      "MainDeck": [
+        {
+          "cardId": 101,
+          "quantity": 4
+        },
+        {
+          "cardId": 201,
+          "quantity": 56
+        }
+      ],
+      "Sideboard": [
+        {
+          "cardId": 301,
+          "quantity": 2
+        }
+      ],
+      "CommandZone": [
+        {
+          "cardId": 401,
+          "quantity": 1
+        }
+      ],
+      "Companions": [
+        {
+          "cardId": 501,
+          "quantity": 1
+        }
+      ],
+      "CardSkins": [
+        {
+          "GrpId": "999999",
+          "CCV": "DA"
+        }
+      ]
+    },
+    "fake-deck-empty": {},
+    "fake-deck-explicit": {
+      "MainDeck": [],
+      "Sideboard": [],
+      "CommandZone": [],
+      "Companions": [],
+      "CardSkins": []
+    }
+  }
+}
+[UnityCrossThreadLogger]
+<== DeckGetAllPreconDecksV3(fake-request-precon)
+{"PreconDecks": [{"Deck": {"MainDeck": [{"cardId": 999998, "quantity": 4}]}}]}
+[UnityCrossThreadLogger]
+<== EventGetCoursesV2(fake-request-course)
+{"Courses": [{"CourseDeck": {"MainDeck": [{"cardId": 999997, "quantity": 4}]}}]}
+[UnityCrossThreadLogger]
+==> DeckUpsertDeckV3 {"id": "fake-update", "request": "{\"Summary\": {\"DeckId\": \"fake-deck-alpha\", \"Name\": \"Synthetic Changed\"}, \"Deck\": {\"MainDeck\": [{\"cardId\": 101, \"quantity\": 58}]}, \"ActionType\": \"Updated\"}"}
+[UnityCrossThreadLogger]
+<== DeckUpsertDeckV3(fake-update)
+{"DeckId": "fake-deck-alpha", "Name": "Synthetic Changed"}
+Unrelated rendering information

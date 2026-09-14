@@ -254,17 +254,27 @@ def validate_deck(
                         title_id=rows[arena_id]["title_id"],
                     ))
     elif mode is OperatingMode.WILDCARD_BUDGET:
+        if collection is None:
+            errors.append(ValidationIssue(
+                "collection_required",
+                "Wildcard-budget mode requires known collection data; ownership is unavailable.",
+            ))
         if inventory is None:
             errors.append(ValidationIssue(
                 "inventory_required", "Wildcard-budget mode requires wildcard inventory."
             ))
-        else:
+        elif collection is not None:
             for arena_id, shortage in shortages.items():
                 if shortage and arena_id in rows:
                     wildcard_cost[rows[arena_id]["rarity"] or "unknown"] += shortage
             for rarity, needed in wildcard_cost.items():
-                available = inventory.wildcards.get(rarity, 0)
-                if needed > available:
+                available = inventory.wildcards.get(rarity)
+                if available is None:
+                    errors.append(ValidationIssue(
+                        "wildcard_inventory_incomplete",
+                        f"Available {rarity} wildcard count is unknown; need {needed}.",
+                    ))
+                elif needed > available:
                     errors.append(ValidationIssue(
                         "wildcard_shortage",
                         f"Need {needed} {rarity} wildcards; only {available} available.",

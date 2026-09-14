@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import sys
 from pathlib import Path
 
 from mtgadb import canonical
-from mtgadb.model import Collection, Inventory
+from mtgadb.model import Collection, Inventory, Status
 from mtgadb.modes import OperatingMode
+from mtgadb.providers.arena_log import ArenaLogProvider
 from services.exporter import export_arena_deck, import_arena_deck
 from services.validator import DeckRules, validate_deck
 
@@ -109,6 +111,25 @@ def normalize_command(args: argparse.Namespace) -> int:
         con.close()
 
 
+def inspect_arena_command(args: argparse.Namespace) -> int:
+    """Print source snapshots and diagnostics; never load account-state tables."""
+    con = canonical.open_db(args.database)
+    try:
+        provider = ArenaLogProvider(args.log, database=con)
+        results = {
+            "inventory": provider.get_inventory(),
+            "decks": provider.get_decks(),
+            "collection": provider.get_collection(),
+        }
+        print(json.dumps({key: asdict(value) for key, value in results.items()}, indent=2))
+        supported = (results["inventory"], results["decks"])
+        return 0 if all(r.ok for r in supported) else (
+            2 if any(r.diagnostics.status is Status.ERROR for r in supported) else 1
+        )
+    finally:
+        con.close()
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -136,6 +157,12 @@ def parser() -> argparse.ArgumentParser:
     validate.add_argument("--min-commanders", type=int, default=0)
     validate.add_argument("--max-commanders", type=int, default=0)
     validate.set_defaults(func=validate_command)
+
+    inspect = sub.add_parser(
+        "inspect-arena", help="inspect read-only StartHook snapshots and capability evidence"
+    )
+    inspect.add_argument("log", type=Path)
+    inspect.set_defaults(func=inspect_arena_command)
 
     normalize = sub.add_parser(
         "normalize", help="resolve and render a canonical Arena decklist"

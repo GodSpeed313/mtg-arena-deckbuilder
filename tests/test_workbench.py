@@ -89,7 +89,7 @@ Sideboard
         )
         crafted = validate_deck(
             deck, self.con, mode=OperatingMode.WILDCARD_BUDGET,
-            inventory=Inventory(),
+            collection=Collection(), inventory=Inventory(),
         )
         self.assertTrue(owned.valid)
         self.assertTrue(crafted.valid)
@@ -185,6 +185,57 @@ Sideboard
         self.assertEqual(
             [e.code for e in report.errors].count("wildcard_shortage"), 1
         )
+
+    def test_wildcard_budget_does_not_assume_missing_ownership_is_zero(self) -> None:
+        deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck
+        report = validate_deck(
+            deck, self.con, mode=OperatingMode.WILDCARD_BUDGET,
+            inventory=Inventory({"common": 100}),
+        )
+        self.assertFalse(report.valid)
+        self.assertIn("collection_required", {e.code for e in report.errors})
+        self.assertEqual(report.wildcard_cost, {})
+
+    def test_wildcard_budget_accepts_explicit_known_empty_collection(self) -> None:
+        deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck
+        report = validate_deck(
+            deck, self.con, mode=OperatingMode.WILDCARD_BUDGET,
+            collection=Collection(), inventory=Inventory({"common": 4}),
+        )
+        self.assertTrue(report.valid)
+        self.assertEqual(report.wildcard_cost, {"common": 4})
+
+
+    def test_confirmed_zero_wildcards_produce_shortage(self) -> None:
+        deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck
+        report = validate_deck(
+            deck, self.con, mode=OperatingMode.WILDCARD_BUDGET,
+            collection=Collection(), inventory=Inventory({"common": 0}),
+        )
+        self.assertFalse(report.valid)
+        self.assertEqual([e.code for e in report.errors], ["wildcard_shortage"])
+        self.assertEqual(report.wildcard_cost, {"common": 4})
+
+    def test_missing_wildcard_rarity_is_unknown_not_zero(self) -> None:
+        deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck
+        report = validate_deck(
+            deck, self.con, mode=OperatingMode.WILDCARD_BUDGET,
+            collection=Collection(), inventory=Inventory({"rare": 10}),
+        )
+        self.assertFalse(report.valid)
+        self.assertEqual([e.code for e in report.errors], ["wildcard_inventory_incomplete"])
+        self.assertIn("common", report.errors[0].message)
+        self.assertEqual(report.wildcard_cost, {"common": 4})
+
+    def test_unavailable_inventory_does_not_produce_affordability(self) -> None:
+        deck = import_arena_deck("4 Test Bolt\n56 Forest", self.con).deck
+        report = validate_deck(
+            deck, self.con, mode=OperatingMode.WILDCARD_BUDGET,
+            collection=Collection(), inventory=None,
+        )
+        self.assertFalse(report.valid)
+        self.assertEqual([e.code for e in report.errors], ["inventory_required"])
+        self.assertEqual(report.wildcard_cost, {})
 
 
 if __name__ == "__main__":
