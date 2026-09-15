@@ -90,6 +90,16 @@ def _zone(raw: dict, key: str) -> list[dict[str, int]] | None:
     return deepcopy(raw[key])
 
 
+@dataclass(frozen=True)
+class ArenaSnapshotBundle:
+    """Capabilities from one provider's selected response, never mixed sources."""
+
+    observed_at: str | None
+    inventory: ProviderResult[ArenaInventorySnapshot]
+    decks: ProviderResult[list[ArenaDeckSnapshot]]
+    collection: ProviderResult[Collection]
+
+
 class ArenaLogProvider:
     """One captured log read, with independently inspectable capabilities.
 
@@ -166,6 +176,16 @@ class ArenaLogProvider:
         if self._failure:
             return self._result(None, Status.ERROR, error=self._failure)
         return self._result(None, Status.NOT_FOUND, reason="StartHook_not_found")
+
+    def get_snapshot(self) -> ArenaSnapshotBundle:
+        """Capture the selected observation for archival without reading again."""
+        if not self._evidence.get("start_hook_responses"):
+            raise ValueError("No received StartHook observation is available to archive")
+        return ArenaSnapshotBundle(
+            observed_at=self._evidence["observed_at"],
+            inventory=self.get_inventory(), decks=self.get_decks(),
+            collection=self.get_collection(),
+        )
 
     def get_collection(self) -> ProviderResult[Collection]:
         return self._result(

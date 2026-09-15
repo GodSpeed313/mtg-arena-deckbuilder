@@ -222,3 +222,62 @@ Account/request/deck identifiers are synthetic/redacted and user-created deck
 names are synthetic. Some non-identifying structural/sample values reflect
 observed Arena payloads. Tests do not require a running Arena client or write
 to a real log.
+
+## Immutable Arena snapshot archive (pass #2)
+
+The archive is separate from canonical schema version 2 and defaults to
+`arena_snapshots.db`. Its own store schema and payload serialization versions
+are both 1. Canonical rebuilds and ownership/deck loaders do not use this archive.
+
+```powershell
+python workbench.py save-arena "C:\Users\User\AppData\LocalLow\Wizards Of The Coast\MTGA\Player.log"
+python workbench.py list-arena-snapshots
+python workbench.py show-arena-snapshot <snapshot-id>
+```
+
+Each command accepts `--store <path>`. Saving generates an opaque ID internally;
+repeated saves of the same observation create separate immutable records. Listing
+uses local insertion order. Observation time and persistence time are separate;
+unknown observation time remains null. Age alone is not proof of freshness.
+
+One save archives inventory, decks, and unsupported collection together from the
+provider's last received StartHook by file order. It never merges responses or
+fills holes from earlier records. The reserved account key is always SQL NULL:
+no account grouping, current-state promotion, replacement, or deletion occurs.
+`complete` means observed fields satisfy the provider contract, not that Arena
+sent the entire saved-deck roster. A deck absent later is not evidence of deletion.
+
+Missing numeric fields remain JSON null, confirmed zero remains 0, absent zones
+remain null, and explicit empty zones remain []. Card rows retain their order,
+printing IDs, and duplicates. Error/unsupported capabilities have SQL NULL data.
+A valid inventory and a deck error can be archived in the same observation.
+
+Validation and serialization precede a single SQLite transaction containing the
+header and all three capabilities. Success is reported only after commit. Save
+exit status 0 means persisted, not complete: inspect the reported capability
+statuses. Failures return exit status 2 without success output. A failed initial
+creation can leave an empty file, but never a visible partial observation.
+Unsupported store/payload versions fail explicitly; there is no automatic rebuild
+or migration. The API provides no update/delete operation. Immutability is an
+application contract, not protection against manually editing the SQLite file.
+
+List/show open existing archives read-only and need neither Arena, Player.log,
+nor the canonical database. Listing a missing archive reports no store without
+creating it; showing a missing archive or ID fails. Output contains opaque archive
+IDs, times, statuses, balances and zone counts, never saved-deck IDs or names.
+Printing-ID database lookup is not performed by archive commands.
+
+The private archive retains necessary deck IDs/names and reviewed deck fields
+internally. It excludes raw logs, request/account IDs, and arbitrary StartHook or
+summary metadata. Only reviewed attributes, cosmetic fields and provider evidence
+are serialized. Do not publish the database: the default filename and SQLite
+companion files are ignored by Git. A custom `--store` path should be outside the
+repository or separately ignored. Content hashes detect accidental payload changes;
+they do not authenticate the archive.
+
+```powershell
+python -m unittest tests.test_snapshot_store -v
+```
+
+Archive tests use temporary stores and the existing privacy-safe fixture. They do
+not read the live log or retain real account/deck/request identifiers or names.

@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from mtgadb import canonical
+from mtgadb import canonical, snapshot_store
 from mtgadb.model import Collection, Inventory, Status
 from mtgadb.modes import OperatingMode
 from mtgadb.providers.arena_log import ArenaLogProvider
@@ -130,6 +130,26 @@ def inspect_arena_command(args: argparse.Namespace) -> int:
         con.close()
 
 
+def save_arena_command(args: argparse.Namespace) -> int:
+    provider = ArenaLogProvider(args.log)
+    saved = snapshot_store.save_snapshot(args.store, provider)
+    print(json.dumps({"persisted": True, **snapshot_store.summarize(saved, details=True)}, indent=2))
+    return 0
+
+
+def list_arena_snapshots_command(args: argparse.Namespace) -> int:
+    exists = args.store.exists()
+    snapshots = snapshot_store.list_snapshots(args.store) if exists else []
+    print(json.dumps({"store_exists": exists, "snapshots": snapshots}, indent=2))
+    return 0
+
+
+def show_arena_snapshot_command(args: argparse.Namespace) -> int:
+    saved = snapshot_store.get_snapshot(args.store, args.snapshot_id)
+    print(json.dumps(snapshot_store.summarize(saved, details=True), indent=2))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -164,6 +184,17 @@ def parser() -> argparse.ArgumentParser:
     inspect.add_argument("log", type=Path)
     inspect.set_defaults(func=inspect_arena_command)
 
+    save = sub.add_parser("save-arena", help="archive one StartHook observation without merging")
+    save.add_argument("log", type=Path)
+    save.set_defaults(func=save_arena_command)
+    listing = sub.add_parser("list-arena-snapshots", help="list archived observations")
+    listing.set_defaults(func=list_arena_snapshots_command)
+    show = sub.add_parser("show-arena-snapshot", help="inspect one archived observation")
+    show.add_argument("snapshot_id", help="opaque archive-generated snapshot ID")
+    show.set_defaults(func=show_arena_snapshot_command)
+    for command in (save, listing, show):
+        command.add_argument("--store", type=Path, default=ROOT / "arena_snapshots.db")
+
     normalize = sub.add_parser(
         "normalize", help="resolve and render a canonical Arena decklist"
     )
@@ -175,7 +206,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if not args.database.exists():
+    if args.command not in {"save-arena", "list-arena-snapshots", "show-arena-snapshot"} and not args.database.exists():
         print(f"database not found: {args.database}", file=sys.stderr)
         return 2
     try:
