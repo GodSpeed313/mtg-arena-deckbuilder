@@ -349,6 +349,136 @@ class ClassificationTests(unittest.TestCase):
                 ))
                 self.assertIn(text, result["unsupported_text"])
 
+    def test_exact_interaction_effects_project_as_capabilities(self):
+        cases = (
+            ("Exile target creature.", "effect.exile.creature.v1", "exile_creature"),
+            ("Exile target permanent.", "effect.exile.permanent.v1", "exile_permanent"),
+            ("Exile target artifact.", "effect.exile.artifact.v1", "exile_artifact"),
+            ("Exile target enchantment.", "effect.exile.enchantment.v1", "exile_enchantment"),
+            ("Exile target card from a graveyard.",
+             "effect.exile.graveyard_card.v1", "exile_graveyard_card"),
+            ("Return target creature to its owner's hand.",
+             "effect.bounce.creature.v1", "bounce_creature"),
+            ("Return target permanent to its owner's hand.",
+             "effect.bounce.permanent.v1", "bounce_permanent"),
+            ("Target opponent discards two cards.",
+             "effect.discard.opponent.v1", "discard_opponent"),
+            ("Target opponent sacrifices a creature.",
+             "effect.force_sacrifice.creature.v1", "force_sacrifice_creature"),
+            ("Target opponent sacrifices a permanent.",
+             "effect.force_sacrifice.permanent.v1", "force_sacrifice_permanent"),
+        )
+        for text, rule_id, label in cases:
+            with self.subTest(text=text):
+                result = classify_card(card(text, types="Sorcery"))
+                feature = next(
+                    feature for feature in result["features"]
+                    if feature["rule_id"] == rule_id
+                )
+                self.assertEqual(
+                    (feature["dimension"], feature["label"],
+                     feature["relationship"], feature["evidence"]),
+                    ("ability", label, "capability", text),
+                )
+                self.assertEqual(labels(result), set())
+                self.assertEqual(interactions([result]), [])
+
+    def test_recursion_and_temporary_protection_compatibility(self):
+        recursion_text = (
+            "Return target creature card from your graveyard to your hand."
+        )
+        recursion = classify_card(card(recursion_text, types="Sorcery"))
+        recursion_features = [
+            feature for feature in recursion["features"]
+            if feature["rule_id"] == "effect.recursion.v1"
+        ]
+        self.assertEqual(
+            {(feature["dimension"], feature["label"], feature["relationship"])
+             for feature in recursion_features},
+            {("role", "recursion", "effect"),
+             ("theme", "graveyard", "consumer")},
+        )
+        self.assertEqual(
+            recursion["abilities"][0]["effects"][0]["kind"],
+            "return_from_graveyard",
+        )
+
+        for keyword in ("hexproof", "indestructible"):
+            with self.subTest(keyword=keyword):
+                text = (
+                    f"Target creature you control gains {keyword} until end of turn."
+                )
+                protection = classify_card(card(text, types="Instant"))
+                self.assertIn("protection", labels(protection))
+                self.assertIn("effect.protection.v1", {
+                    feature["rule_id"] for feature in protection["features"]
+                })
+
+    def test_costs_do_not_project_opponent_interaction_capabilities(self):
+        sacrifice = classify_card(card(
+            "Sacrifice a creature: Draw a card.", types="Creature"
+        ))
+        discard = classify_card(card(
+            "Discard a card: Draw a card.", types="Creature"
+        ))
+        forbidden = {
+            "effect.discard.opponent.v1",
+            "effect.force_sacrifice.creature.v1",
+            "effect.force_sacrifice.permanent.v1",
+        }
+        for result in (sacrifice, discard):
+            self.assertTrue(forbidden.isdisjoint(
+                feature["rule_id"] for feature in result["features"]
+            ))
+
+    def test_unsupported_interaction_forms_do_not_project(self):
+        cases = (
+            "Exile all creatures.",
+            "Exile target creature, then return it to the battlefield.",
+            "Target opponent discards a card at random.",
+            "Target opponent discards a card unless they pay {2}.",
+            "Each opponent discards a card.",
+            "Target opponent sacrifices a creature of their choice.",
+            "Return target creature card from your graveyard to the battlefield.",
+            "Choose one — Exile target creature.",
+        )
+        prefixes = (
+            "effect.exile.", "effect.bounce.", "effect.discard.",
+            "effect.force_sacrifice.", "effect.recursion.",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                result = classify_card(card(text, types="Sorcery"))
+                self.assertFalse(any(
+                    feature["rule_id"].startswith(prefixes)
+                    for feature in result["features"]
+                ))
+                self.assertIn(text, result["unsupported_text"])
+
+    def test_interaction_capabilities_add_no_family_and_keep_partial_text(self):
+        source = classify_card(card(
+            "Exile target creature. Unmodeled rider.", types="Instant"
+        ))
+        discard = classify_card(replace(card(
+            "Target opponent discards a card.", types="Sorcery"
+        ), title_id=2))
+        sacrifice = classify_card(replace(card(
+            "Target opponent sacrifices a permanent.", types="Sorcery"
+        ), title_id=3))
+        self.assertIn("effect.exile.creature.v1", {
+            feature["rule_id"] for feature in source["features"]
+        })
+        self.assertEqual(source["unsupported_text"], ["Unmodeled rider."])
+        self.assertEqual(interactions([source, discard, sacrifice]), [])
+        self.assertEqual(
+            [family.family_id for family in INTERACTION_FAMILIES],
+            [
+                "interaction.token_draw.v1",
+                "interaction.spell_draw.v1",
+                "interaction.token_sacrifice.v1",
+            ],
+        )
+
     def test_threat_is_only_potential(self):
         result = classify_card(card(types="Creature", power="2", toughness="2"))
         self.assertEqual(result["features"][0]["relationship"], "potential")

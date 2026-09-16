@@ -55,6 +55,7 @@ ABILITY_PROJECTED_RULE_IDS = frozenset({
     "trigger.spells.v1",
     "trigger.token_draw.v1",
     "cost.sacrifice_draw.v1",
+    "effect.recursion.v1",
 })
 
 # Whole ability lines only. No substring/keyword classification: conditional,
@@ -160,6 +161,61 @@ def _project_ability_features(
         draws = [effect for effect in ability.effects if effect.kind == "draw"]
         for effect in ability.effects:
             friendly_trigger = ability.trigger is None or ability.trigger.friendly is True
+            capability_effects = {
+                ("exile", "target_creature"): (
+                    "effect.exile.creature.v1", "exile_creature",
+                ),
+                ("exile", "target_permanent"): (
+                    "effect.exile.permanent.v1", "exile_permanent",
+                ),
+                ("exile", "target_artifact"): (
+                    "effect.exile.artifact.v1", "exile_artifact",
+                ),
+                ("exile", "target_enchantment"): (
+                    "effect.exile.enchantment.v1", "exile_enchantment",
+                ),
+                ("exile", "card"): (
+                    "effect.exile.graveyard_card.v1", "exile_graveyard_card",
+                ),
+                ("return_to_hand", "target_creature"): (
+                    "effect.bounce.creature.v1", "bounce_creature",
+                ),
+                ("return_to_hand", "target_permanent"): (
+                    "effect.bounce.permanent.v1", "bounce_permanent",
+                ),
+                ("discard", "target_opponent"): (
+                    "effect.discard.opponent.v1", "discard_opponent",
+                ),
+                ("force_sacrifice", "creature"): (
+                    "effect.force_sacrifice.creature.v1", "force_sacrifice_creature",
+                ),
+                ("force_sacrifice", "permanent"): (
+                    "effect.force_sacrifice.permanent.v1", "force_sacrifice_permanent",
+                ),
+            }
+            capability = capability_effects.get((effect.kind, effect.target))
+            if capability is not None:
+                rule_id, label = capability
+                feature(
+                    rule_id,
+                    "ability",
+                    label,
+                    "capability",
+                    effect.evidence,
+                    "Exact reviewed interaction capability; no strategic role, "
+                    "quality, or recommendation is inferred.",
+                )
+            if effect.kind == "return_from_graveyard":
+                feature(
+                    "effect.recursion.v1", "role", "recursion", "effect",
+                    effect.evidence,
+                    "Returns a creature card from your graveyard to hand, not the battlefield.",
+                )
+                feature(
+                    "effect.recursion.v1", "theme", "graveyard", "consumer",
+                    effect.evidence,
+                    "Returns a creature card from your graveyard to hand, not the battlefield.",
+                )
             damage_targets = {
                 "target_creature": ("creature", "damage_creature"),
                 "target_player": ("player", "damage_player"),

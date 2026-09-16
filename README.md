@@ -337,6 +337,25 @@ membership, or strategic value. Combat damage, prevention/replacement/redirectio
 relative or divided damage, excess damage, multipliers, fight/bite mechanics, and
 unreviewed trigger wording remain unsupported and visible.
 
+Reviewed interaction forms also recognize exact targeted exile of a creature,
+permanent, artifact, enchantment, or card from a graveyard; return of a target
+creature or permanent to its owner's hand; target-opponent discard with an explicit
+quantity; and target-opponent sacrifice of one creature or permanent. The structured
+effects retain the reviewed target, quantity where present, controller information,
+and explicit origin/destination zones. Graveyard-to-hand creature recursion keeps
+its existing recursion and graveyard-consumer features, while temporary hexproof
+and indestructible protection keep their existing protection behavior. The new
+interaction capabilities do not imply removal quality, tempo, control, discard or
+graveyard-hate archetypes, card advantage, strategic ranking, or recommendations,
+and they add no interaction family.
+
+Mass or delayed exile, blink/flicker, replacement exile, cards chosen from hand,
+random or conditional discard, each-opponent wording, sacrifice costs and choice
+edicts, mill, surveil, battlefield reanimation, flashback, escape, disturb, delve,
+threshold, graveyard-size conditions, and unreviewed modal forms remain unsupported
+and visible. This bounded vocabulary is not a general zone, modal, replacement-
+effect, or Magic rules engine.
+
 Structured abilities project the reviewed creature-token and named
 noncreature-token producers, lifegain and +1/+1 counter producers/listeners,
 token-entry draw payoff, instant/sorcery cast payoff and activated sacrifice/draw

@@ -75,6 +75,8 @@ class Effect:
     source: str | None = None
     controller: str = "you"
     friendly: bool | None = True
+    origin_zone: str | None = None
+    destination_zone: str | None = None
     token: TokenSpec | None = None
     conditions: tuple[Condition, ...] = ()
     qualifiers: tuple[Qualifier, ...] = ()
@@ -378,6 +380,112 @@ def _parse_effects(
                 amount=_count(gain_life.group("count")),
                 controller="you" if friendly else "target_opponent",
                 friendly=friendly,
+            ))
+            continue
+
+        recursion = re.fullmatch(
+            r"Return target creature card from your graveyard to your hand\.",
+            sentence,
+            re.I,
+        )
+        if recursion:
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "return_from_graveyard",
+                sentence,
+                target="creature_card",
+                controller="you",
+                friendly=True,
+                origin_zone="your_graveyard",
+                destination_zone="your_hand",
+            ))
+            continue
+
+        graveyard_exile = re.fullmatch(
+            r"Exile target card from a graveyard\.", sentence, re.I
+        )
+        if graveyard_exile:
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "exile",
+                sentence,
+                target="card",
+                controller="unspecified",
+                friendly=None,
+                origin_zone="graveyard",
+                destination_zone="exile",
+            ))
+            continue
+
+        exile = re.fullmatch(
+            r"Exile target (?P<target>creature|permanent|artifact|enchantment)\.",
+            sentence,
+            re.I,
+        )
+        if exile:
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "exile",
+                sentence,
+                target=f"target_{exile.group('target').casefold()}",
+                controller="unspecified",
+                friendly=None,
+                destination_zone="exile",
+            ))
+            continue
+
+        bounce = re.fullmatch(
+            r"Return target (?P<target>creature|permanent) to its owner['’]s hand\.",
+            sentence,
+            re.I,
+        )
+        if bounce:
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "return_to_hand",
+                sentence,
+                target=f"target_{bounce.group('target').casefold()}",
+                controller="unspecified",
+                friendly=None,
+                destination_zone="owner_hand",
+            ))
+            continue
+
+        discard = re.fullmatch(
+            r"Target opponent discards (?P<count>a|one|two|three|\d+) cards?\.",
+            sentence,
+            re.I,
+        )
+        if discard:
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "discard",
+                sentence,
+                amount=_count(discard.group("count")),
+                target="target_opponent",
+                controller="target_opponent",
+                friendly=False,
+                origin_zone="opponent_hand",
+                destination_zone="graveyard",
+            ))
+            continue
+
+        force_sacrifice = re.fullmatch(
+            r"Target opponent sacrifices a (?P<target>creature|permanent)\.",
+            sentence,
+            re.I,
+        )
+        if force_sacrifice:
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "force_sacrifice",
+                sentence,
+                amount=1,
+                target=force_sacrifice.group("target").casefold(),
+                controller="target_opponent",
+                friendly=False,
+                origin_zone="battlefield",
+                destination_zone="graveyard",
             ))
             continue
 

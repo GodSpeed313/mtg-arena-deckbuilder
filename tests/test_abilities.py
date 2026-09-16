@@ -431,6 +431,132 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(row.effects[0].kind, "gain_life")
         self.assertEqual(row.unsupported_remainder[0].text, "Unmodeled rider.")
 
+    def test_exact_exile_forms_preserve_target_and_zones(self):
+        cases = (
+            ("creature", "target_creature"),
+            ("permanent", "target_permanent"),
+            ("artifact", "target_artifact"),
+            ("enchantment", "target_enchantment"),
+        )
+        for wording, target in cases:
+            with self.subTest(wording=wording):
+                row = decompose_abilities(
+                    f"Exile target {wording}.", card_types="Instant"
+                )[0]
+                self.assertEqual(row.parse_status, "supported")
+                effect = row.effects[0]
+                self.assertEqual((effect.kind, effect.target), ("exile", target))
+                self.assertEqual(effect.destination_zone, "exile")
+                self.assertIsNone(effect.friendly)
+
+        graveyard = decompose_abilities(
+            "Exile target card from a graveyard.", card_types="Instant"
+        )[0].effects[0]
+        self.assertEqual((graveyard.kind, graveyard.target), ("exile", "card"))
+        self.assertEqual(graveyard.origin_zone, "graveyard")
+        self.assertEqual(graveyard.destination_zone, "exile")
+
+    def test_bounce_and_opponent_discard_preserve_bounded_details(self):
+        for wording, target in (
+            ("creature", "target_creature"),
+            ("permanent", "target_permanent"),
+        ):
+            with self.subTest(wording=wording):
+                effect = decompose_abilities(
+                    f"Return target {wording} to its owner’s hand.",
+                    card_types="Instant",
+                )[0].effects[0]
+                self.assertEqual((effect.kind, effect.target), ("return_to_hand", target))
+                self.assertEqual(effect.destination_zone, "owner_hand")
+                self.assertIsNone(effect.friendly)
+
+        for wording, amount in (("a card", 1), ("two cards", 2), ("7 cards", 7)):
+            with self.subTest(wording=wording):
+                effect = decompose_abilities(
+                    f"Target opponent discards {wording}.", card_types="Sorcery"
+                )[0].effects[0]
+                self.assertEqual((effect.kind, effect.amount), ("discard", amount))
+                self.assertEqual(effect.controller, "target_opponent")
+                self.assertEqual(effect.origin_zone, "opponent_hand")
+                self.assertEqual(effect.destination_zone, "graveyard")
+                self.assertFalse(effect.friendly)
+
+    def test_recursion_and_forced_sacrifice_are_structurally_distinct(self):
+        recursion = decompose_abilities(
+            "Return target creature card from your graveyard to your hand.",
+            card_types="Sorcery",
+        )[0].effects[0]
+        self.assertEqual(recursion.kind, "return_from_graveyard")
+        self.assertEqual(recursion.target, "creature_card")
+        self.assertEqual(recursion.origin_zone, "your_graveyard")
+        self.assertEqual(recursion.destination_zone, "your_hand")
+        self.assertTrue(recursion.friendly)
+
+        for target in ("creature", "permanent"):
+            with self.subTest(target=target):
+                row = decompose_abilities(
+                    f"Target opponent sacrifices a {target}.",
+                    card_types="Sorcery",
+                )[0]
+                effect = row.effects[0]
+                self.assertEqual(effect.kind, "force_sacrifice")
+                self.assertEqual(effect.target, target)
+                self.assertEqual(effect.amount, 1)
+                self.assertFalse(effect.friendly)
+                self.assertFalse(row.costs)
+
+        cost = decompose_abilities(
+            "Sacrifice a creature: Draw a card.", card_types="Creature"
+        )[0]
+        self.assertEqual(cost.costs[0].kind, "sacrifice")
+        self.assertFalse(any(effect.kind == "force_sacrifice" for effect in cost.effects))
+
+    def test_broader_interaction_false_positives_remain_unsupported(self):
+        cases = (
+            "Exile all creatures.",
+            "Exile target creature until Synthetic Card leaves the battlefield.",
+            "Exile target creature, then return it to the battlefield.",
+            "If a card would be put into a graveyard, exile it instead.",
+            "Exile a card from target opponent's hand.",
+            "Target opponent discards a card at random.",
+            "Target opponent discards a card unless they pay {2}.",
+            "Each opponent discards a card.",
+            "You may sacrifice a creature.",
+            "Each opponent sacrifices a creature.",
+            "Target opponent sacrifices a creature of their choice.",
+            "Mill three cards.",
+            "Surveil 2.",
+            "Return target creature card from your graveyard to the battlefield.",
+            "Flashback {2}{U}",
+            "Choose one — Exile target creature.",
+        )
+        forbidden = {"exile", "return_to_hand", "discard", "force_sacrifice",
+                     "return_from_graveyard"}
+        for text in cases:
+            with self.subTest(text=text):
+                row = decompose_abilities(text, card_types="Sorcery")[0]
+                self.assertEqual(row.parse_status, "unsupported")
+                self.assertTrue(forbidden.isdisjoint(
+                    effect.kind for effect in row.effects
+                ))
+
+        discard_cost = decompose_abilities(
+            "Discard a card: Draw a card.", card_types="Creature"
+        )[0]
+        self.assertEqual(discard_cost.parse_status, "partial")
+        self.assertEqual([effect.kind for effect in discard_cost.effects], ["draw"])
+        self.assertTrue(forbidden.isdisjoint(
+            effect.kind for effect in discard_cost.effects
+        ))
+
+    def test_interaction_effect_with_unknown_tail_stays_partial(self):
+        row = decompose_abilities(
+            "Exile target creature. Unmodeled rider.", card_types="Instant"
+        )[0]
+        self.assertEqual(row.parse_status, "partial")
+        self.assertEqual(row.effects[0].kind, "exile")
+        self.assertEqual(row.unsupported_remainder[0].text, "Unmodeled rider.")
+
     def test_colon_inside_triggered_effect_does_not_become_activation(self):
         row = decompose_abilities(
             "Whenever you cast an instant or sorcery spell, "
