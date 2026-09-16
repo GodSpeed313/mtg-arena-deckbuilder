@@ -126,7 +126,7 @@ class AbilityDecompositionTests(unittest.TestCase):
             row.unsupported_remainder[0].reason == "unsupported_modal" for row in rows
         ))
 
-    def test_lightning_bolt_numeric_damage(self):
+    def test_direct_damage_preserves_amount_target_and_source(self):
         rows = decompose_abilities(
             "Lightning Bolt deals 3 damage to any target.",
             card_name="Lightning Bolt",
@@ -137,6 +137,87 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(rows[0].parse_status, "supported")
         self.assertEqual((effect.kind, effect.amount, effect.target),
                          ("damage", 3, "any_target"))
+        self.assertEqual(effect.source, "self")
+        self.assertEqual(effect.controller, "source_controller")
+        self.assertIsNone(effect.friendly)
+
+        cases = (
+            ("This spell deals 2 damage to target creature.", "target_creature"),
+            ("This spell deals 2 damage to target player.", "target_player"),
+            ("This spell deals 2 damage to target opponent.", "target_opponent"),
+            ("This spell deals 2 damage to target planeswalker.",
+             "target_planeswalker"),
+            ("This spell deals 2 damage to target battle.", "target_battle"),
+            ("This spell deals 2 damage to each opponent.", "each_opponent"),
+        )
+        for text, target in cases:
+            with self.subTest(target=target):
+                parsed = decompose_abilities(text, card_types="Sorcery")[0].effects[0]
+                self.assertEqual(parsed.target, target)
+                self.assertEqual(parsed.source, "spell")
+                self.assertIsNone(parsed.friendly)
+
+        symbolic = decompose_abilities(
+            "This spell deals X damage to target creature.", card_types="Sorcery"
+        )[0].effects[0]
+        self.assertEqual(symbolic.amount, "X")
+
+    def test_tap_activation_preserves_damage_capability_without_frequency(self):
+        ability = decompose_abilities(
+            "{T}: Synthetic Pinger deals 1 damage to any target.",
+            card_name="Synthetic Pinger",
+            card_types="Creature",
+        )[0]
+        self.assertEqual(ability.kind, "activated")
+        self.assertEqual(ability.parse_status, "supported")
+        self.assertEqual(
+            [(cost.kind, cost.subject, cost.timing) for cost in ability.costs],
+            [("tap", "self", "activated")],
+        )
+        self.assertEqual(
+            (ability.effects[0].kind, ability.effects[0].amount,
+             ability.effects[0].target, ability.effects[0].source),
+            ("damage", 1, "any_target", "self"),
+        )
+
+    def test_unsupported_damage_semantics_remain_unsupported(self):
+        cases = (
+            "Whenever Synthetic Card deals combat damage to a player, draw a card.",
+            "Synthetic Card assigns combat damage as though it weren't blocked.",
+            "Prevent the next 3 damage that would be dealt to target creature.",
+            "If damage would be dealt to you, prevent that damage.",
+            "Damage can't be prevented.",
+            "Synthetic Card instead deals 3 damage to target creature.",
+            "Redirect that damage to target player.",
+            "You may have it deal that damage to target creature.",
+            "Synthetic Card deals that much damage to target opponent.",
+            "Synthetic Card deals damage equal to its power to target creature.",
+            "Synthetic Card deals damage equal to the number of cards in your hand "
+            "to target player.",
+            "Synthetic Card deals 3 damage divided as you choose among any number "
+            "of targets.",
+            "Synthetic Card deals excess damage to target player.",
+            "Double that damage.",
+            "Target creature you control fights target creature you don't control.",
+            "Target creature deals damage equal to its power to another target creature.",
+            "Flying (Damage dealt by this creature is combat damage.)",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                row = decompose_abilities(
+                    text, card_name="Synthetic Card", card_types="Creature"
+                )[0]
+                self.assertEqual(row.parse_status, "unsupported")
+                self.assertFalse(row.effects)
+
+    def test_direct_damage_with_unknown_tail_stays_partial(self):
+        row = decompose_abilities(
+            "This spell deals 3 damage to target creature. Unmodeled rider.",
+            card_types="Sorcery",
+        )[0]
+        self.assertEqual(row.parse_status, "partial")
+        self.assertEqual(row.effects[0].kind, "damage")
+        self.assertEqual(row.unsupported_remainder[0].text, "Unmodeled rider.")
 
     def test_archmage_neighboring_unsupported_ability_does_not_suppress_trigger(self):
         rows = decompose_abilities(

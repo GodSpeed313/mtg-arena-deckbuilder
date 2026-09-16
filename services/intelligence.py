@@ -160,6 +160,30 @@ def _project_ability_features(
         draws = [effect for effect in ability.effects if effect.kind == "draw"]
         for effect in ability.effects:
             friendly_trigger = ability.trigger is None or ability.trigger.friendly is True
+            damage_targets = {
+                "target_creature": ("creature", "damage_creature"),
+                "target_player": ("player", "damage_player"),
+                "target_opponent": ("opponent", "damage_opponent"),
+                "any_target": ("any_target", "damage_any_target"),
+                "target_planeswalker": ("planeswalker", "damage_planeswalker"),
+                "target_battle": ("battle", "damage_battle"),
+                "each_opponent": ("each_opponent", "damage_each_opponent"),
+            }
+            if effect.kind == "damage" and effect.target in damage_targets:
+                target_id, label = damage_targets[effect.target]
+                relationship = {
+                    "activated": "activated",
+                    "triggered": "triggered",
+                }.get(ability.kind, "one_shot")
+                feature(
+                    f"effect.damage.{target_id}.v1",
+                    "ability",
+                    label,
+                    relationship,
+                    effect.evidence,
+                    "Explicit direct-damage capability with retained amount and "
+                    "target; no removal, burn, or effectiveness is inferred.",
+                )
             if (
                 effect.kind == "create_creature_token"
                 and effect.friendly is True
@@ -201,6 +225,19 @@ def _project_ability_features(
                     effect.evidence,
                     "Explicitly places +1/+1 counters; no archetype is inferred.",
                 )
+        if (
+            permanent
+            and ability.kind == "activated"
+            and any(effect.kind == "damage" for effect in ability.effects)
+        ):
+            feature(
+                "ability.activated_damage.v1",
+                "ability",
+                "activated_damage",
+                "activated",
+                ability.raw_text,
+                "Explicit activated damage capability; activation frequency is not inferred.",
+            )
         if (
             permanent
             and ability.trigger is not None

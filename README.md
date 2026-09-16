@@ -327,6 +327,16 @@ explicit quantity and distinguish the source permanent, a target creature, and a
 explicitly different target creature. Exact self or controlled-creature +1/+1
 counter-placement triggers are listeners/payoffs rather than producers.
 
+Reviewed direct-damage forms retain an exact numeric or symbolic `X` amount,
+distinguish the spell from the named source card, and separately represent target
+creature, player, opponent, planeswalker, battle, each-opponent, and any-target
+wording. Exact tap-activated damage is identified as an activated capability, but
+activation frequency, available targets, and damage resolution are not evaluated.
+These capability features do not imply removal, burn, threat quality, interaction
+membership, or strategic value. Combat damage, prevention/replacement/redirection,
+relative or divided damage, excess damage, multipliers, fight/bite mechanics, and
+unreviewed trigger wording remain unsupported and visible.
+
 Structured abilities project the reviewed creature-token and named
 noncreature-token producers, lifegain and +1/+1 counter producers/listeners,
 token-entry draw payoff, instant/sorcery cast payoff and activated sacrifice/draw

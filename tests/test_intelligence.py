@@ -73,6 +73,95 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(labels(classify_card(card("Scry 2."))), {"card_selection"})
         self.assertEqual(labels(classify_card(card("Draw a card."))), {"card_draw"})
 
+    def test_damage_targets_project_as_non_strategic_capabilities(self):
+        cases = (
+            ("target creature", "effect.damage.creature.v1", "damage_creature"),
+            ("target player", "effect.damage.player.v1", "damage_player"),
+            ("target opponent", "effect.damage.opponent.v1", "damage_opponent"),
+            ("any target", "effect.damage.any_target.v1", "damage_any_target"),
+            ("target planeswalker", "effect.damage.planeswalker.v1",
+             "damage_planeswalker"),
+            ("target battle", "effect.damage.battle.v1", "damage_battle"),
+            ("each opponent", "effect.damage.each_opponent.v1",
+             "damage_each_opponent"),
+        )
+        for target, rule_id, label in cases:
+            with self.subTest(target=target):
+                result = classify_card(card(
+                    f"This spell deals 3 damage to {target}.", types="Sorcery"
+                ))
+                damage = [
+                    feature for feature in result["features"]
+                    if feature["rule_id"].startswith("effect.damage.")
+                ]
+                self.assertEqual(len(damage), 1)
+                self.assertEqual(
+                    (damage[0]["rule_id"], damage[0]["dimension"],
+                     damage[0]["label"], damage[0]["relationship"]),
+                    (rule_id, "ability", label, "one_shot"),
+                )
+                self.assertNotIn("removal", labels(result))
+                self.assertNotIn("burn", labels(result, "theme"))
+                self.assertEqual(interactions([result]), [])
+
+    def test_any_target_damage_does_not_expand_into_other_target_labels(self):
+        result = classify_card(card(
+            "This spell deals X damage to any target.", types="Sorcery"
+        ))
+        damage_ids = {
+            feature["rule_id"] for feature in result["features"]
+            if feature["rule_id"].startswith("effect.damage.")
+        }
+        self.assertEqual(damage_ids, {"effect.damage.any_target.v1"})
+        effect = result["abilities"][0]["effects"][0]
+        self.assertEqual((effect["amount"], effect["target"]), ("X", "any_target"))
+
+    def test_activated_damage_is_distinct_without_repeatability_claim(self):
+        result = classify_card(Card(
+            1,
+            "Synthetic Pinger",
+            types="Creature",
+            rules_text="{T}: Synthetic Pinger deals 1 damage to any target.",
+        ))
+        ids = {feature["rule_id"] for feature in result["features"]}
+        self.assertIn("effect.damage.any_target.v1", ids)
+        self.assertIn("ability.activated_damage.v1", ids)
+        target_feature = next(
+            feature for feature in result["features"]
+            if feature["rule_id"] == "effect.damage.any_target.v1"
+        )
+        activated = next(
+            feature for feature in result["features"]
+            if feature["rule_id"] == "ability.activated_damage.v1"
+        )
+        self.assertEqual(target_feature["relationship"], "activated")
+        self.assertEqual(activated["relationship"], "activated")
+        self.assertIn("frequency is not inferred", activated["explanation"])
+        self.assertNotIn("removal", labels(result))
+        self.assertEqual(interactions([result]), [])
+
+    def test_unsupported_damage_wording_does_not_project(self):
+        cases = (
+            "Whenever Synthetic Card deals combat damage to a player, draw a card.",
+            "Prevent the next 3 damage that would be dealt to target creature.",
+            "Synthetic Card deals that much damage to target opponent.",
+            "Synthetic Card deals damage equal to its power to target creature.",
+            "Synthetic Card deals 3 damage divided as you choose among any number "
+            "of targets.",
+            "Target creature you control fights target creature you don't control.",
+            "Flying (Damage dealt by this creature is combat damage.)",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                result = classify_card(card(text, types="Creature"))
+                self.assertFalse(any(
+                    feature["rule_id"].startswith((
+                        "effect.damage.", "ability.activated_damage."
+                    ))
+                    for feature in result["features"]
+                ))
+                self.assertIn(text, result["unsupported_text"])
+
     def test_ramp_and_fixing_distinct(self):
         mana = classify_card(card("{T}: Add {G}.", types="Creature"))
         self.assertEqual(labels(mana), {"ramp"})

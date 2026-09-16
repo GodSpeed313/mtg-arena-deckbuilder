@@ -72,6 +72,7 @@ class Effect:
     amount: int | str | None = None
     target: str | None = None
     counter_type: str | None = None
+    source: str | None = None
     controller: str = "you"
     friendly: bool | None = True
     token: TokenSpec | None = None
@@ -415,19 +416,29 @@ def _parse_effects(
         if card_name:
             damage_subjects.insert(0, re.escape(card_name))
         damage = re.fullmatch(
-            rf"(?:{'|'.join(damage_subjects)}) deals (?P<amount>\d+) damage to "
-            r"(?P<target>any target|target creature|target opponent|each opponent)\.",
+            rf"(?P<source>{'|'.join(damage_subjects)}) deals "
+            r"(?P<amount>\d+|X) damage to "
+            r"(?P<target>any target|target creature|target player|target opponent|"
+            r"target planeswalker|target battle|each opponent)\.",
             sentence,
             re.I,
         )
         if damage:
             target = damage.group("target").casefold().replace(" ", "_")
+            source = (
+                "spell"
+                if damage.group("source").casefold() == "this spell"
+                else "self"
+            )
             effects.append(Effect(
                 f"{ability_id}.effect.{len(effects) + 1:03d}",
                 "damage",
                 sentence,
-                amount=int(damage.group("amount")),
+                amount=_count(damage.group("amount")),
                 target=target,
+                source=source,
+                controller="source_controller",
+                friendly=None,
             ))
             continue
 
@@ -554,7 +565,11 @@ def _parse_line(
         costs: list[Cost] = []
         unsupported: list[UnsupportedRemainder] = []
         for part in (piece.strip() for piece in cost_text.split(",") if piece.strip()):
-            cost = _parse_sacrifice_cost(part, timing="activated")
+            cost = (
+                Cost("tap", "self", "activated", part)
+                if part.casefold() == "{t}"
+                else _parse_sacrifice_cost(part, timing="activated")
+            )
             if cost:
                 costs.append(cost)
             else:
