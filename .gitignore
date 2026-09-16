@@ -1,13 +1,26 @@
 # Derived artifacts. The canonical database is a projection of Arena's shipped
 # card database and rebuilds in about a second via `python build_db.py`, so
-# there is no reason to carry ~17MB of it in git.
-current.db
+# there is no reason to carry it or any local SQLite snapshots in git.
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 snapshots/
 
-# Personal data. collection.json holds the player's own card collection, and
-# the traffic capture is a raw slice of Player.log.
-collection.json
-new_traffic.log
+# Personal Arena data. Keep only explicitly reviewed, synthetic fixtures.
+Player.log
+**/Player.log
+*.log
+!tests/fixtures/arena_log_redacted.log
+/account*.json
+/collection*.json
+
+# Local credentials and configuration. A documented template may be tracked.
+.env
+.env.*
+!.env.example
 
 # Tooling / session state
 .letta/
@@ -15,6 +28,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+SESSION_HANDOFF*.md
 
 # Private Arena snapshot archive and SQLite companion files.
 arena_snapshots.db
