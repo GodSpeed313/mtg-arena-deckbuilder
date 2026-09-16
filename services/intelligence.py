@@ -231,9 +231,28 @@ def classify_card(card: Card) -> dict:
         or line.casefold() == f"{card.name} can't attack.".casefold()
         for line in text_lines
     )
+    self_names = {card.name, card.name.split(",", 1)[0]}
+    self_name_pattern = "|".join(
+        re.escape(name) for name in sorted(self_names, key=len, reverse=True)
+    )
+    conditional_creature_line = next((
+        line for line in text_lines
+        if re.fullmatch(
+            rf"As long as .+, (?:{self_name_pattern}) isn't a creature\.",
+            line,
+            re.I,
+        )
+    ), None)
     if "Creature" in types and card.power.isdigit() and int(card.power) > 0 and not cannot_attack:
-        add("type.threat.v1", "role", "threat", "potential", card.types + " " + card.power + "/" + card.toughness,
-            "Positive-power creature: potential combat threat, not an effectiveness rating.")
+        if conditional_creature_line:
+            add(
+                "type.conditional_threat.v1", "role", "threat", "conditional",
+                conditional_creature_line,
+                "Printed positive-power creature is a combat threat only while its explicit creature-state condition is satisfied.",
+            )
+        else:
+            add("type.threat.v1", "role", "threat", "potential", card.types + " " + card.power + "/" + card.toughness,
+                "Positive-power creature: potential combat threat, not an effectiveness rating.")
 
     unsupported = []
     # An anomalous canonical choice cannot safely ground ability classification.

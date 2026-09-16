@@ -127,6 +127,45 @@ class ClassificationTests(unittest.TestCase):
         ))
         self.assertIn("threat", labels(other_target))
 
+    def test_named_conditional_creature_state_marks_threat_conditional(self):
+        condition = (
+            "As long as your devotion to white is less than five, "
+            "Heliod isn't a creature."
+        )
+        heliod = classify_card(Card(
+            1,
+            "Heliod, Sun-Crowned",
+            types="Enchantment Creature",
+            power="5",
+            toughness="5",
+            rules_text=condition,
+        ))
+        threats = [
+            feature for feature in heliod["features"]
+            if feature["dimension"] == "role" and feature["label"] == "threat"
+        ]
+        self.assertEqual(len(threats), 1)
+        self.assertEqual(threats[0]["rule_id"], "type.conditional_threat.v1")
+        self.assertEqual(threats[0]["relationship"], "conditional")
+        self.assertEqual(threats[0]["evidence"], condition)
+        self.assertNotIn("type.threat.v1", {feature["rule_id"] for feature in threats})
+        self.assertIn(condition, heliod["unsupported_text"])
+
+        unrelated = classify_card(Card(
+            2,
+            "Synthetic Card",
+            types="Creature",
+            power="5",
+            toughness="5",
+            rules_text=condition,
+        ))
+        unrelated_threat = next(
+            feature for feature in unrelated["features"]
+            if feature["dimension"] == "role" and feature["label"] == "threat"
+        )
+        self.assertEqual(unrelated_threat["rule_id"], "type.threat.v1")
+        self.assertEqual(unrelated_threat["relationship"], "potential")
+
     def test_anomaly_and_no_text(self):
         anomalous = classify_card(card("Draw a card.", resolution=Resolution.ANOMALY))
         self.assertEqual(labels(anomalous), set())

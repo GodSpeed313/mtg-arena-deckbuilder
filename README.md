@@ -304,8 +304,10 @@ The compatibility rules recognize narrow whole-line forms of targeted destructio
 draw, scry, counterspells, temporary protection, graveyard-to-hand recursion,
 basic-land ramp/fixing, tapping nonlands for mana, and flexible mana production.
 Positive-power creatures are labeled potential threats unless supported text is
-exactly `Defender` or explicitly says that card/creature can't attack; this is
-not a general combat evaluator.
+exactly `Defender` or explicitly says that card/creature can't attack. A named
+`As long as ..., <card> isn't a creature.` line instead produces a conditional
+threat backed by that exact line (including Heliod-style devotion conditions);
+the condition is retained but not evaluated. This is not a general combat evaluator.
 Structured abilities conservatively separate reviewed triggers, costs, effects,
 conditions, qualifiers and unsupported remainders. They project the existing
 creature-token producer, token-entry draw payoff, instant/sorcery cast payoff and
