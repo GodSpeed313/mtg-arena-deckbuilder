@@ -44,13 +44,24 @@ class Cost:
 
 
 @dataclass(frozen=True, slots=True)
+class Keyword:
+    name: str
+    subject: str
+    evidence: str
+    value: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class TokenSpec:
     quantity: int | str
-    power: int
-    toughness: int
+    kind: str
+    power: int | None
+    toughness: int | None
     colors: tuple[str, ...]
     subtypes: tuple[str, ...]
     artifact: bool
+    name: str | None = None
+    keywords: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,11 +96,24 @@ class Ability:
     costs: tuple[Cost, ...] = ()
     effects: tuple[Effect, ...] = ()
     qualifiers: tuple[Qualifier, ...] = ()
+    keywords: tuple[Keyword, ...] = ()
     unsupported_remainder: tuple[UnsupportedRemainder, ...] = ()
 
 
 _COUNT_WORDS = {"a": 1, "one": 1, "two": 2, "three": 3}
 _COLORS = frozenset({"white", "blue", "black", "red", "green", "colorless"})
+_INTRINSIC_KEYWORDS = frozenset({
+    "flying", "vigilance", "trample", "deathtouch", "lifelink", "haste",
+    "reach", "menace", "defender", "first_strike", "double_strike",
+    "hexproof", "indestructible",
+})
+_NAMED_NONCREATURE_TOKENS = {
+    "treasure": "Treasure",
+    "clue": "Clue",
+    "food": "Food",
+    "blood": "Blood",
+    "map": "Map",
+}
 _SENTENCE_SPLIT = re.compile(r"(?<=\.)\s+")
 
 
@@ -148,16 +172,57 @@ def _parse_trigger(text: str) -> Trigger | None:
     return None
 
 
+def _keyword_name(text: str) -> str:
+    return text.casefold().replace(" ", "_")
+
+
+def _parse_keyword_list(text: str) -> tuple[str, ...] | None:
+    parts = tuple(
+        _keyword_name(part.strip())
+        for part in re.split(r", | and ", text)
+        if part.strip()
+    )
+    if not parts or any(part not in _INTRINSIC_KEYWORDS for part in parts):
+        return None
+    return parts
+
+
 def _token_spec(text: str) -> tuple[TokenSpec, str] | None:
+    named = re.fullmatch(
+        r"(?P<count>a|one|two|three|\d+|X) "
+        r"(?P<name>Treasure|Clue|Food|Blood|Map) tokens?",
+        text,
+        re.I,
+    )
+    if named:
+        name = _NAMED_NONCREATURE_TOKENS[named.group("name").casefold()]
+        return TokenSpec(
+            quantity=_count(named.group("count")),
+            kind="named_noncreature",
+            power=None,
+            toughness=None,
+            colors=(),
+            subtypes=(),
+            artifact=False,
+            name=name,
+        ), named.group(0)
+
     match = re.fullmatch(
         r"(?P<count>a|one|two|three|\d+|X) "
         r"(?P<power>\d+)/(?P<toughness>\d+) "
-        r"(?P<description>.+?) creature tokens?",
+        r"(?P<description>.+?) creature tokens?"
+        r"(?: with (?P<keywords>.+))?",
         text,
         re.I,
     )
     if not match:
         return None
+    keywords = ()
+    if match.group("keywords"):
+        parsed_keywords = _parse_keyword_list(match.group("keywords"))
+        if parsed_keywords is None:
+            return None
+        keywords = parsed_keywords
     words = match.group("description").split()
     colors = tuple(word.casefold() for word in words if word.casefold() in _COLORS)
     artifact = any(word.casefold() == "artifact" for word in words)
@@ -167,11 +232,13 @@ def _token_spec(text: str) -> tuple[TokenSpec, str] | None:
     )
     return TokenSpec(
         quantity=_count(match.group("count")),
+        kind="creature",
         power=int(match.group("power")),
         toughness=int(match.group("toughness")),
         colors=colors,
         subtypes=subtypes,
         artifact=artifact,
+        keywords=keywords,
     ), match.group(0)
 
 
@@ -181,6 +248,50 @@ def _parse_effects(
     effects: list[Effect] = []
     qualifiers: list[Qualifier] = []
     unsupported: list[UnsupportedRemainder] = []
+
+    def append_token_effect(sentence: str) -> bool:
+        token_controller = None
+        token_text = None
+        friendly = None
+        imperative = re.fullmatch(r"Create (?P<token>.+)\.", sentence, re.I)
+        opponent = re.fullmatch(
+            r"Target opponent creates (?P<token>.+)\.", sentence, re.I
+        )
+        if imperative:
+            token_controller, friendly = "you", True
+            token_text = imperative.group("token")
+        elif opponent:
+            token_controller, friendly = "opponent", False
+            token_text = opponent.group("token")
+        if token_text is None:
+            return False
+        parsed_token = _token_spec(token_text)
+        if parsed_token:
+            token, _ = parsed_token
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                (
+                    "create_creature_token"
+                    if token.kind == "creature"
+                    else "create_noncreature_token"
+                ),
+                sentence,
+                amount=token.quantity,
+                controller=token_controller,
+                friendly=friendly,
+                token=token,
+            ))
+            return True
+        unsupported.append(UnsupportedRemainder(
+            sentence,
+            "effect",
+            (
+                "unsupported_noncreature_token"
+                if re.search(r"\b(?:Treasure|Food|Clue|Blood|Map) tokens?\b", token_text, re.I)
+                else "unsupported_token"
+            ),
+        ))
+        return True
 
     for sentence in (part.strip() for part in _SENTENCE_SPLIT.split(text) if part.strip()):
         if sentence.casefold() == "this ability triggers only once each turn.":
@@ -228,12 +339,10 @@ def _parse_effects(
             ))
             if draw.group("tail"):
                 remainder = draw.group("tail")[5:] + "."
-                reason = (
-                    "noncreature_token"
-                    if re.fullmatch(r"create (?:a|one|\d+) Treasure tokens?\.", remainder, re.I)
-                    else "unsupported_clause"
-                )
-                unsupported.append(UnsupportedRemainder(remainder, "effect", reason))
+                if not append_token_effect(remainder):
+                    unsupported.append(UnsupportedRemainder(
+                        remainder, "effect", "unsupported_clause"
+                    ))
             continue
 
         damage_subjects = ["This spell"]
@@ -256,39 +365,7 @@ def _parse_effects(
             ))
             continue
 
-        token_controller = None
-        token_text = None
-        friendly = None
-        imperative = re.fullmatch(r"Create (?P<token>.+)\.", sentence, re.I)
-        opponent = re.fullmatch(
-            r"Target opponent creates (?P<token>.+)\.", sentence, re.I
-        )
-        if imperative:
-            token_controller, friendly = "you", True
-            token_text = imperative.group("token")
-        elif opponent:
-            token_controller, friendly = "opponent", False
-            token_text = opponent.group("token")
-        if token_text is not None:
-            parsed_token = _token_spec(token_text)
-            if parsed_token:
-                token, evidence = parsed_token
-                effects.append(Effect(
-                    f"{ability_id}.effect.{len(effects) + 1:03d}",
-                    "create_creature_token",
-                    sentence,
-                    amount=token.quantity,
-                    controller=token_controller,
-                    friendly=friendly,
-                    token=token,
-                ))
-                continue
-            reason = (
-                "noncreature_token"
-                if re.search(r"\b(?:Treasure|Food|Clue|Blood|Map) tokens?\b", token_text, re.I)
-                else "unsupported_token"
-            )
-            unsupported.append(UnsupportedRemainder(sentence, "effect", reason))
+        if append_token_effect(sentence):
             continue
 
         unsupported.append(UnsupportedRemainder(sentence, "effect", "unsupported_clause"))
@@ -316,13 +393,15 @@ def _ability(
     costs: list[Cost] | None = None,
     effects: list[Effect] | None = None,
     qualifiers: list[Qualifier] | None = None,
+    keywords: list[Keyword] | None = None,
     unsupported: list[UnsupportedRemainder] | None = None,
 ) -> Ability:
     costs = costs or []
     effects = effects or []
     qualifiers = qualifiers or []
+    keywords = keywords or []
     unsupported = unsupported or []
-    has_supported = bool(trigger or costs or effects or qualifiers)
+    has_supported = bool(trigger or costs or effects or qualifiers or keywords)
     return Ability(
         ability_id=ability_id,
         source_index=source_index,
@@ -336,6 +415,7 @@ def _ability(
         costs=tuple(costs),
         effects=tuple(effects),
         qualifiers=tuple(qualifiers),
+        keywords=tuple(keywords),
         unsupported_remainder=tuple(unsupported),
     )
 
@@ -348,6 +428,29 @@ def _parse_line(
     card_name: str,
     card_types: frozenset[str],
 ) -> Ability:
+    permanent = bool(card_types & {
+        "Creature", "Artifact", "Enchantment", "Land", "Planeswalker",
+    })
+    intrinsic = _keyword_name(raw_text)
+    if permanent and intrinsic in _INTRINSIC_KEYWORDS:
+        return _ability(
+            ability_id,
+            source_index,
+            raw_text,
+            "static_keyword",
+            keywords=[Keyword(intrinsic, "self", raw_text)],
+        )
+
+    ward = re.fullmatch(r"Ward (?P<cost>(?:\{[0-9WUBRGCXYZ/]+\})+)", raw_text, re.I)
+    if permanent and ward:
+        return _ability(
+            ability_id,
+            source_index,
+            raw_text,
+            "static_keyword",
+            keywords=[Keyword("ward", "self", raw_text, ward.group("cost"))],
+        )
+
     additional = re.fullmatch(
         r"As an additional cost to cast this spell, (?P<cost>sacrifice .+)\.",
         raw_text,

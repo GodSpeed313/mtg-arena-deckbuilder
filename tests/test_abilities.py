@@ -20,8 +20,11 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(rows[0].costs[0].subject, "artifact_or_creature")
         self.assertEqual(rows[1].effects[0].kind, "draw")
         self.assertEqual(rows[1].effects[0].amount, 2)
-        self.assertEqual(rows[1].parse_status, "partial")
-        self.assertEqual(rows[1].unsupported_remainder[0].reason, "noncreature_token")
+        self.assertEqual(rows[1].parse_status, "supported")
+        self.assertEqual(rows[1].effects[1].kind, "create_noncreature_token")
+        self.assertEqual(rows[1].effects[1].token.name, "Treasure")
+        self.assertEqual(rows[1].effects[1].token.quantity, 1)
+        self.assertFalse(rows[1].unsupported_remainder)
         self.assertNotIn("create_creature_token", {effect.kind for effect in rows[1].effects})
 
     def test_agency_coroner_keeps_activation_cost_effect_and_condition_attached(self):
@@ -73,8 +76,32 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(token.kind, "create_creature_token")
         self.assertTrue(token.friendly)
         self.assertEqual(token.token.quantity, 1)
+        self.assertEqual((token.token.power, token.token.toughness), (1, 1))
         self.assertEqual(token.token.colors, ("red",))
         self.assertEqual(token.token.subtypes, ("Elemental",))
+        self.assertFalse(token.token.keywords)
+
+    def test_creature_token_quantity_characteristics_and_keywords_are_explicit(self):
+        token = decompose_abilities(
+            "Create two 2/2 green Wolf creature tokens with vigilance and trample.",
+            card_types="Sorcery",
+        )[0].effects[0].token
+        self.assertEqual(token.kind, "creature")
+        self.assertEqual(token.quantity, 2)
+        self.assertEqual((token.power, token.toughness), (2, 2))
+        self.assertEqual(token.colors, ("green",))
+        self.assertEqual(token.subtypes, ("Wolf",))
+        self.assertEqual(token.keywords, ("vigilance", "trample"))
+
+        variable = decompose_abilities(
+            "Create X 1/1 colorless Thopter artifact creature tokens with flying.",
+            card_types="Sorcery",
+        )[0].effects[0].token
+        self.assertEqual(variable.quantity, "X")
+        self.assertEqual(variable.colors, ("colorless",))
+        self.assertEqual(variable.subtypes, ("Thopter",))
+        self.assertTrue(variable.artifact)
+        self.assertEqual(variable.keywords, ("flying",))
 
     def test_friendly_token_entry_trigger_keeps_frequency_qualifier(self):
         ability = decompose_abilities(
@@ -138,13 +165,74 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(token.effects[0].controller, "opponent")
         self.assertFalse(token.effects[0].friendly)
 
-    def test_treasure_only_production_is_not_creature_token_creation(self):
+    def test_named_noncreature_tokens_are_distinct_from_creature_tokens(self):
+        for name in ("Treasure", "Clue", "Food", "Blood", "Map"):
+            with self.subTest(name=name):
+                row = decompose_abilities(
+                    f"Create two {name} tokens.", card_types="Sorcery"
+                )[0]
+                self.assertEqual(row.parse_status, "supported")
+                self.assertEqual(row.effects[0].kind, "create_noncreature_token")
+                self.assertEqual(row.effects[0].token.kind, "named_noncreature")
+                self.assertEqual(row.effects[0].token.name, name)
+                self.assertEqual(row.effects[0].token.quantity, 2)
+                self.assertIsNone(row.effects[0].token.power)
+                self.assertIsNone(row.effects[0].token.toughness)
+
+    def test_intrinsic_keywords_are_whole_line_and_keep_ward_cost(self):
+        keywords = (
+            "Flying", "Vigilance", "Trample", "Deathtouch", "Lifelink",
+            "Haste", "Reach", "Menace", "Defender", "First strike",
+            "Double strike", "Hexproof", "Indestructible",
+        )
+        for text in keywords:
+            with self.subTest(text=text):
+                row = decompose_abilities(text, card_types="Creature")[0]
+                self.assertEqual(row.kind, "static_keyword")
+                self.assertEqual(row.parse_status, "supported")
+                self.assertEqual(row.keywords[0].name, text.casefold().replace(" ", "_"))
+                self.assertEqual(row.keywords[0].subject, "self")
+                self.assertEqual(row.keywords[0].evidence, text)
+
+        ward = decompose_abilities("Ward {2}", card_types="Creature")[0]
+        self.assertEqual(ward.keywords[0].name, "ward")
+        self.assertEqual(ward.keywords[0].value, "{2}")
+
+    def test_granted_conditional_and_reminder_keywords_remain_unsupported(self):
+        cases = (
+            "Target creature gains flying until end of turn.",
+            "Creatures you control have flying.",
+            "If you control an artifact, this creature has flying.",
+            "Flying (This creature can't be blocked except by creatures with flying or reach.)",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                row = decompose_abilities(text, card_types="Creature")[0]
+                self.assertEqual(row.parse_status, "unsupported")
+                self.assertFalse(row.keywords)
+
+    def test_token_keyword_never_becomes_source_keyword(self):
         row = decompose_abilities(
-            "Create a Treasure token.", card_types="Sorcery"
+            "Create a 1/1 white Bird creature token with flying.",
+            card_types="Sorcery",
         )[0]
-        self.assertEqual(row.parse_status, "unsupported")
-        self.assertFalse(row.effects)
-        self.assertEqual(row.unsupported_remainder[0].reason, "noncreature_token")
+        self.assertFalse(row.keywords)
+        self.assertEqual(row.effects[0].token.keywords, ("flying",))
+
+    def test_mixed_supported_and_unsupported_effect_text_stays_partial(self):
+        row = decompose_abilities(
+            "Create a Treasure token. Unmodeled rider.", card_types="Sorcery"
+        )[0]
+        self.assertEqual(row.parse_status, "partial")
+        self.assertEqual(row.effects[0].kind, "create_noncreature_token")
+        self.assertEqual(row.unsupported_remainder[0].text, "Unmodeled rider.")
+
+        conditional = decompose_abilities(
+            "If you control an artifact, create a 1/1 colorless Construct creature token.",
+            card_types="Sorcery",
+        )[0]
+        self.assertEqual(conditional.parse_status, "unsupported")
+        self.assertFalse(conditional.effects)
 
     def test_self_and_another_sacrifice_remain_distinct(self):
         self_cost = decompose_abilities(

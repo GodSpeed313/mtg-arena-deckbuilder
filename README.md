@@ -309,9 +309,18 @@ exactly `Defender` or explicitly says that card/creature can't attack. A named
 threat backed by that exact line (including Heliod-style devotion conditions);
 the condition is retained but not evaluated. This is not a general combat evaluator.
 Structured abilities conservatively separate reviewed triggers, costs, effects,
-conditions, qualifiers and unsupported remainders. They project the existing
-creature-token producer, token-entry draw payoff, instant/sorcery cast payoff and
-activated sacrifice/draw outlet feature IDs. Themes also distinguish
+conditions, qualifiers and unsupported remainders. Reviewed creature-token forms
+retain explicit quantity, power/toughness, color, creature type, artifact status,
+and a bounded list of explicit token keywords. Treasure, Clue, Food, Blood, and
+Map production is represented separately as named noncreature-token production;
+no use, payoff, or creature-token interaction is inferred from it. Exact whole-line
+intrinsic flying, vigilance, trample, deathtouch, lifelink, haste, reach, menace,
+defender, first strike, double strike, hexproof, and indestructible are recognized,
+as is Ward with a braced mana cost. Granted, conditional, reminder-text, and other
+qualified keyword forms remain unsupported, and a token's keyword is not assigned
+to its source card. Structured abilities project the reviewed creature-token and
+named noncreature-token producers, token-entry draw payoff, instant/sorcery cast
+payoff and activated sacrifice/draw outlet feature IDs. Themes also distinguish
 +1/+1 counter placement, a Soldier typal bonus, instant/sorcery cast payoffs,
 reusable sacrifice outlets and self-sacrifice costs. Artifact/enchantment/land
 types establish membership only. Structural-recognition coverage is separate from

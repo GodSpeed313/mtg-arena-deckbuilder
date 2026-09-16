@@ -97,6 +97,48 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(a["features"][0]["relationship"], "producer")
         self.assertTrue(any(f["label"] == "tokens" and f["relationship"] == "payoff" for f in b["features"]))
 
+    def test_named_noncreature_tokens_project_without_creature_interactions(self):
+        treasure = classify_card(card("Create two Treasure tokens.", types="Sorcery"))
+        ids = {feature["rule_id"] for feature in treasure["features"]}
+        self.assertIn("effect.noncreature_token.v1", ids)
+        self.assertNotIn("effect.token.v1", ids)
+
+        outlet = classify_card(replace(card(
+            "Sacrifice another creature: Draw a card.", types="Creature"
+        ), title_id=2))
+        payoff = classify_card(replace(card(
+            "Whenever a creature token enters the battlefield under your control, draw a card.",
+            types="Enchantment",
+        ), title_id=3))
+        self.assertEqual(interactions([treasure, outlet, payoff]), [])
+
+    def test_intrinsic_keyword_features_do_not_absorb_granted_or_token_keywords(self):
+        intrinsic = classify_card(card("Flying\nWard {2}", types="Creature"))
+        keyword_features = [
+            feature for feature in intrinsic["features"]
+            if feature["dimension"] == "ability"
+        ]
+        self.assertEqual(
+            [(feature["rule_id"], feature["label"], feature["relationship"])
+             for feature in keyword_features],
+            [
+                ("ability.keyword.flying.v1", "flying", "intrinsic"),
+                ("ability.keyword.ward.v1", "ward", "intrinsic"),
+            ],
+        )
+
+        for text in (
+            "Target creature gains flying until end of turn.",
+            "Creatures you control have flying.",
+            "Create a 1/1 white Bird creature token with flying.",
+        ):
+            with self.subTest(text=text):
+                result = classify_card(card(text, types="Sorcery"))
+                self.assertFalse(any(
+                    feature["rule_id"] == "ability.keyword.flying.v1"
+                    for feature in result["features"]
+                ))
+
     def test_sacrifice_cost_vs_outlet(self):
         for text, relation in (("Sacrifice this creature: Draw a card.", "cost"),
                                ("Sacrifice another creature: Draw a card.", "consumer")):
@@ -117,7 +159,17 @@ class ClassificationTests(unittest.TestCase):
         self.assertNotIn("threat", labels(classify_card(card(types="Creature", power="*"))))
 
     def test_threat_respects_explicit_attack_prohibitions(self):
-        for text in ("Defender", "Synthetic Card can't attack.", "This creature can't attack."):
+        defender = classify_card(card(
+            "Defender", types="Creature", power="5", toughness="5"
+        ))
+        self.assertNotIn("threat", labels(defender))
+        self.assertNotIn("Defender", defender["unsupported_text"])
+        self.assertIn(
+            "ability.keyword.defender.v1",
+            {feature["rule_id"] for feature in defender["features"]},
+        )
+
+        for text in ("Synthetic Card can't attack.", "This creature can't attack."):
             with self.subTest(text=text):
                 result = classify_card(card(text, types="Creature", power="5", toughness="5"))
                 self.assertNotIn("threat", labels(result))
@@ -219,6 +271,8 @@ class ClassificationTests(unittest.TestCase):
         self.assertIn("cost.sacrifice_draw.v1", ids(agency))
         self.assertIn("trigger.spells.v1", ids(archmage))
         self.assertNotIn("cost.sacrifice_draw.v1", ids(deadly))
+        self.assertIn("effect.noncreature_token.v1", ids(deadly))
+        self.assertIn("effect.noncreature_token.v1", ids(treasure))
         self.assertNotIn("effect.token.v1", ids(treasure))
         self.assertNotIn("effect.token.v1", ids(opponent))
         self.assertEqual(agency["abilities"][0]["costs"][0]["timing"], "activated")
@@ -241,10 +295,10 @@ class ClassificationTests(unittest.TestCase):
         )
 
     def test_structural_and_meaningful_ability_coverage_are_distinct(self):
-        treasure = classify_card(card("Create a Treasure token.", types="Sorcery"))
+        unknown_token = classify_card(card("Create a mysterious token.", types="Sorcery"))
         unknown = classify_card(card("Unmodeled text.", types="Enchantment"))
-        self.assertEqual(treasure["ability_coverage"]["structural_recognition"], 1.0)
-        self.assertEqual(treasure["ability_coverage"]["meaningful_understanding"], 0.0)
+        self.assertEqual(unknown_token["ability_coverage"]["structural_recognition"], 1.0)
+        self.assertEqual(unknown_token["ability_coverage"]["meaningful_understanding"], 0.0)
         self.assertEqual(unknown["ability_coverage"]["structural_recognition"], 0.0)
 
     def test_rule_ids_unique(self):

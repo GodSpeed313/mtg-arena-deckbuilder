@@ -47,6 +47,7 @@ INTERACTION_FAMILIES = (
 
 ABILITY_PROJECTED_RULE_IDS = frozenset({
     "effect.token.v1",
+    "effect.noncreature_token.v1",
     "trigger.spells.v1",
     "trigger.token_draw.v1",
     "cost.sacrifice_draw.v1",
@@ -143,6 +144,15 @@ def _project_ability_features(
     for ability in abilities:
         if ability.parse_status not in {"supported", "partial"}:
             continue
+        for keyword in ability.keywords:
+            feature(
+                f"ability.keyword.{keyword.name}.v1",
+                "ability",
+                keyword.name,
+                "intrinsic",
+                keyword.evidence,
+                "Exact whole-line intrinsic keyword; no strategic value is inferred.",
+            )
         draws = [effect for effect in ability.effects if effect.kind == "draw"]
         for effect in ability.effects:
             friendly_trigger = ability.trigger is None or ability.trigger.friendly is True
@@ -155,6 +165,16 @@ def _project_ability_features(
                     "effect.token.v1", "theme", "tokens", "producer",
                     effect.evidence,
                     "Creates a friendly creature token; no payoff is inferred.",
+                )
+            if (
+                effect.kind == "create_noncreature_token"
+                and effect.friendly is True
+                and friendly_trigger
+            ):
+                feature(
+                    "effect.noncreature_token.v1", "theme", "tokens", "producer",
+                    effect.evidence,
+                    "Creates a reviewed named noncreature token; no use or payoff is inferred.",
                 )
         if (
             ability.trigger is not None
