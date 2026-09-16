@@ -327,3 +327,25 @@ is performed. Analysis never changes the database or validator rules.
 ```powershell
 python -m unittest tests.test_intelligence -v
 ```
+
+## Deterministic deck diagnosis (intelligence pass #2)
+
+```powershell
+python workbench.py diagnose-deck examples/sample_deck.txt
+```
+
+Diagnosis consumes the Pass #1 analysis report. It does not parse card text,
+validate legality, query ownership, or recommend changes. Output separates facts,
+interpretations, warnings, and unknowns. Only the existing token-value,
+token-sacrifice, and spells-matter interaction families can support a probable
+plan. A plan is named only after its exact directional interaction, both
+relationship sides, distinct-title support, scaled copy support, 95% resolution
+coverage, and 50% strategic coverage all pass. Stronger evidence may raise the
+confidence from moderate to high; close incomplete candidates remain ambiguous.
+
+Unclassified and unresolved cards reduce confidence rather than count against a
+deck. A recognized payoff or consumer with no matching source is reported as a
+structural warning. Role redundancy and concentration are interpretations, not
+quality warnings. Curve output is descriptive only. Mana-source adequacy and
+mechanical conflicts are explicitly not assessed. When the gates do not support
+a conclusion, the command returns `insufficient evidence to diagnose`.
