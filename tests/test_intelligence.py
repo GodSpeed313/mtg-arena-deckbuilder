@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import redirect_stdout
 from dataclasses import replace
 import io
@@ -11,7 +12,9 @@ import unittest
 
 from mtgadb import canonical
 from mtgadb.model import Card, CardPrinting, Deck, Resolution
-from services.intelligence import analyze_deck, classify_card, interactions, RULES
+from services.intelligence import (
+    INTERACTION_FAMILIES, RULES, analyze_deck, classify_card, interactions,
+)
 from workbench import main
 
 
@@ -135,9 +138,75 @@ class ClassificationTests(unittest.TestCase):
         rows = interactions([source, payoff, outlet, spell])
         self.assertEqual({r["rule_id"] for r in rows}, {"interaction.token_draw.v1", "interaction.token_sacrifice.v1", "interaction.spell_draw.v1"})
         self.assertTrue(all(len(r["evidence"]) == 2 for r in rows))
+        token_draw = next(r for r in rows if r["rule_id"] == "interaction.token_draw.v1")
+        token_draw_family = next(
+            family for family in INTERACTION_FAMILIES
+            if family.family_id == "interaction.token_draw.v1"
+        )
+        self.assertEqual(set(token_draw), {
+            "rule_id", "source_title_id", "target_title_id", "explanation", "evidence",
+        })
+        self.assertEqual((token_draw["source_title_id"], token_draw["target_title_id"]), (1, 2))
+        self.assertEqual(token_draw["explanation"], token_draw_family.explanation)
+        self.assertEqual(
+            [feature["rule_id"] for feature in token_draw["evidence"]],
+            [token_draw_family.source_feature_rule_id,
+             token_draw_family.beneficiary_feature_rule_id],
+        )
+        self.assertFalse(any(
+            r["source_title_id"] == 2 and r["target_title_id"] == 1 for r in rows
+        ))
         self.assertEqual(rows, interactions([spell, outlet, payoff, source]))
         self.assertEqual(interactions([source, dict(source, title_id=7)]), [])
         self.assertEqual(interactions([source]), [])
+
+    def test_interaction_family_metadata_is_stable_and_reusable(self):
+        self.assertIsInstance(INTERACTION_FAMILIES, tuple)
+        self.assertEqual(
+            [family.family_id for family in INTERACTION_FAMILIES],
+            [
+                "interaction.token_draw.v1",
+                "interaction.spell_draw.v1",
+                "interaction.token_sacrifice.v1",
+            ],
+        )
+        self.assertEqual(
+            [
+                (family.source_feature_rule_id, family.beneficiary_feature_rule_id)
+                for family in INTERACTION_FAMILIES
+            ],
+            [
+                ("effect.token.v1", "trigger.token_draw.v1"),
+                ("type.spells.v1", "trigger.spells.v1"),
+                ("effect.token.v1", "cost.sacrifice_draw.v1"),
+            ],
+        )
+        self.assertTrue(all(family.explanation for family in INTERACTION_FAMILIES))
+
+    def test_repeated_pairs_group_by_interaction_family(self):
+        first_source = classify_card(card(
+            "Create a 1/1 white Soldier creature token.", types="Sorcery"
+        ))
+        second_source = classify_card(replace(card(
+            "Create a 1/1 white Soldier creature token.", types="Sorcery"
+        ), title_id=6))
+        token_payoff = classify_card(replace(card(
+            "Whenever a creature token enters the battlefield under your control, draw a card.",
+            types="Enchantment"), title_id=2))
+        spell_payoff = classify_card(replace(card(
+            "Whenever you cast an instant or sorcery spell, draw a card.",
+            types="Enchantment"), title_id=5))
+
+        rows = interactions([first_source, second_source, token_payoff, spell_payoff])
+        self.assertEqual(Counter(row["rule_id"] for row in rows), {
+            "interaction.token_draw.v1": 2,
+            "interaction.spell_draw.v1": 2,
+        })
+        self.assertEqual(
+            {row["source_title_id"] for row in rows
+             if row["rule_id"] == "interaction.token_draw.v1"},
+            {1, 6},
+        )
 
     def test_interactions_reject_near_match_prerequisites(self):
         token_source = classify_card(card("Create a 1/1 white Soldier creature token.", types="Sorcery"))

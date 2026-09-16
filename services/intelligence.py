@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 import re
 import sqlite3
 
@@ -13,6 +14,35 @@ ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
          "counterspell", "protection", "recursion", "threat")
 THEMES = ("tokens", "counters", "sacrifice", "graveyard", "typal", "spells",
           "artifacts", "enchantments", "lands")
+
+
+@dataclass(frozen=True)
+class InteractionFamily:
+    """One directional relationship between two classified feature rules."""
+
+    family_id: str
+    source_feature_rule_id: str
+    beneficiary_feature_rule_id: str
+    explanation: str
+
+
+INTERACTION_FAMILIES = (
+    InteractionFamily(
+        "interaction.token_draw.v1", "effect.token.v1", "trigger.token_draw.v1",
+        "Creating this creature token can trigger the other card's draw ability "
+        "while that payoff is on the battlefield.",
+    ),
+    InteractionFamily(
+        "interaction.spell_draw.v1", "type.spells.v1", "trigger.spells.v1",
+        "Casting this instant/sorcery can trigger the other card's draw ability "
+        "while that payoff is on the battlefield.",
+    ),
+    InteractionFamily(
+        "interaction.token_sacrifice.v1", "effect.token.v1", "cost.sacrifice_draw.v1",
+        "The created creature token can pay the other permanent's sacrifice cost "
+        "to draw a card; the token is consumed.",
+    ),
+)
 
 # Whole ability lines only. No substring/keyword classification: conditional,
 # modal, opponent-directed and unfamiliar variants deliberately remain unknown.
@@ -128,25 +158,23 @@ def classify_card(card: Card) -> dict:
 def interactions(cards: list[dict]) -> list[dict]:
     result = []
     # Exact feature pairs, never a shared-theme join. All require distinct titles.
-    pairs = (
-        ("interaction.token_draw.v1", "effect.token.v1", "trigger.token_draw.v1",
-         "Creating this creature token can trigger the other card's draw ability while that payoff is on the battlefield."),
-        ("interaction.spell_draw.v1", "type.spells.v1", "trigger.spells.v1",
-         "Casting this instant/sorcery can trigger the other card's draw ability while that payoff is on the battlefield."),
-        ("interaction.token_sacrifice.v1", "effect.token.v1", "cost.sacrifice_draw.v1",
-         "The created creature token can pay the other permanent's sacrifice cost to draw a card; the token is consumed."),
-    )
     for source in cards:
-        for target in cards:
-            if source["title_id"] == target["title_id"]:
+        for beneficiary in cards:
+            if source["title_id"] == beneficiary["title_id"]:
                 continue
-            for rule_id, producer, payoff, explanation in pairs:
-                a = next((f for f in source["features"] if f["rule_id"] == producer), None)
-                b = next((f for f in target["features"] if f["rule_id"] == payoff), None)
+            for family in INTERACTION_FAMILIES:
+                a = next((f for f in source["features"]
+                          if f["rule_id"] == family.source_feature_rule_id), None)
+                b = next((f for f in beneficiary["features"]
+                          if f["rule_id"] == family.beneficiary_feature_rule_id), None)
                 if a and b:
-                    result.append(dict(rule_id=rule_id, source_title_id=source["title_id"],
-                                       target_title_id=target["title_id"], explanation=explanation,
-                                       evidence=[a, b]))
+                    result.append(dict(
+                        rule_id=family.family_id,
+                        source_title_id=source["title_id"],
+                        target_title_id=beneficiary["title_id"],
+                        explanation=family.explanation,
+                        evidence=[a, b],
+                    ))
     return sorted(result, key=lambda x: (x["rule_id"], x["source_title_id"], x["target_title_id"]))
 
 
