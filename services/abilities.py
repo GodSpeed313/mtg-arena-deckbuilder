@@ -71,6 +71,7 @@ class Effect:
     evidence: str
     amount: int | str | None = None
     target: str | None = None
+    counter_type: str | None = None
     controller: str = "you"
     friendly: bool | None = True
     token: TokenSpec | None = None
@@ -132,8 +133,24 @@ def _count(value: str) -> int | str:
     return value.upper()
 
 
-def _parse_trigger(text: str) -> Trigger | None:
+def _parse_trigger(text: str, *, card_name: str) -> Trigger | None:
     value = text.casefold()
+    if value == "you gain life":
+        return Trigger("life_gained", "you", "you", True, text)
+
+    counter_subjects = {
+        "one or more +1/+1 counters are put on a creature you control": (
+            "creature_you_control", "you", True,
+        ),
+    }
+    if card_name:
+        counter_subjects[
+            f"one or more +1/+1 counters are put on {card_name}".casefold()
+        ] = ("self", "you", True)
+    if value in counter_subjects:
+        subject, controller, friendly = counter_subjects[value]
+        return Trigger("counter_placed", subject, controller, friendly, text)
+
     spell_subjects = {
         "you cast an instant or sorcery spell": ("instant_or_sorcery", "you", True),
         "an opponent casts an instant or sorcery spell": (
@@ -345,6 +362,55 @@ def _parse_effects(
                     ))
             continue
 
+        gain_life = re.fullmatch(
+            r"(?:(?P<you>You) gain|(?P<opponent>Target opponent) gains) "
+            r"(?P<count>one|two|three|\d+|X) life\.",
+            sentence,
+            re.I,
+        )
+        if gain_life:
+            friendly = gain_life.group("you") is not None
+            effects.append(Effect(
+                f"{ability_id}.effect.{len(effects) + 1:03d}",
+                "gain_life",
+                sentence,
+                amount=_count(gain_life.group("count")),
+                controller="you" if friendly else "target_opponent",
+                friendly=friendly,
+            ))
+            continue
+
+        put_counter = re.fullmatch(
+            r"Put (?P<count>a|one|two|three|\d+) \+1/\+1 counters? on "
+            r"(?P<target>.+)\.",
+            sentence,
+            re.I,
+        )
+        if put_counter:
+            target_text = put_counter.group("target")
+            targets = {
+                "this creature": "self",
+                "target creature": "target_creature",
+                "target creature you control": "target_creature_you_control",
+                "another target creature": "another_target_creature",
+                "another target creature you control": (
+                    "another_target_creature_you_control"
+                ),
+            }
+            if card_name:
+                targets[card_name.casefold()] = "self"
+            target = targets.get(target_text.casefold())
+            if target is not None:
+                effects.append(Effect(
+                    f"{ability_id}.effect.{len(effects) + 1:03d}",
+                    "put_counter",
+                    sentence,
+                    amount=_count(put_counter.group("count")),
+                    target=target,
+                    counter_type="+1/+1",
+                ))
+                continue
+
         damage_subjects = ["This spell"]
         if card_name:
             damage_subjects.insert(0, re.escape(card_name))
@@ -468,7 +534,7 @@ def _parse_line(
 
     triggered = re.fullmatch(r"(?:When|Whenever) (?P<trigger>.+?), (?P<effect>.+)", raw_text, re.I)
     if triggered:
-        trigger = _parse_trigger(triggered.group("trigger"))
+        trigger = _parse_trigger(triggered.group("trigger"), card_name=card_name)
         if trigger is None:
             return _ability(
                 ability_id, source_index, raw_text, "unsupported",

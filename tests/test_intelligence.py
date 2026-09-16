@@ -153,6 +153,113 @@ class ClassificationTests(unittest.TestCase):
         self.assertNotIn("counters", labels(classify_card(card("Counter target spell.")), "theme"))
         self.assertIn("typal", labels(classify_card(card("Other Soldiers you control get +1/+1.")), "theme"))
 
+    def test_lifegain_producer_listener_and_lifelink_stay_distinct(self):
+        producer = classify_card(card("You gain 3 life.", types="Sorcery"))
+        listener = classify_card(card(
+            "Whenever you gain life, draw a card.", types="Enchantment"
+        ))
+        lifelink = classify_card(card("Lifelink", types="Creature"))
+        opponent = classify_card(card("Target opponent gains 3 life.", types="Sorcery"))
+
+        self.assertIn("effect.lifegain.v1", {
+            feature["rule_id"] for feature in producer["features"]
+        })
+        producer_feature = next(
+            feature for feature in producer["features"]
+            if feature["rule_id"] == "effect.lifegain.v1"
+        )
+        self.assertEqual(
+            (producer_feature["label"], producer_feature["relationship"]),
+            ("lifegain", "producer"),
+        )
+        self.assertIn("trigger.lifegain.v1", {
+            feature["rule_id"] for feature in listener["features"]
+        })
+        listener_feature = next(
+            feature for feature in listener["features"]
+            if feature["rule_id"] == "trigger.lifegain.v1"
+        )
+        self.assertEqual(
+            (listener_feature["label"], listener_feature["relationship"]),
+            ("lifegain", "payoff"),
+        )
+        self.assertNotIn("effect.lifegain.v1", {
+            feature["rule_id"] for feature in listener["features"]
+        })
+        self.assertIn("ability.keyword.lifelink.v1", {
+            feature["rule_id"] for feature in lifelink["features"]
+        })
+        self.assertNotIn("effect.lifegain.v1", {
+            feature["rule_id"] for feature in lifelink["features"]
+        })
+        self.assertNotIn("effect.lifegain.v1", {
+            feature["rule_id"] for feature in opponent["features"]
+        })
+
+    def test_plus1_counter_producer_and_listener_stay_distinct(self):
+        producer = classify_card(card(
+            "Put two +1/+1 counters on target creature you control.",
+            types="Sorcery",
+        ))
+        listener = classify_card(card(
+            "Whenever one or more +1/+1 counters are put on Synthetic Card, "
+            "draw a card.",
+            types="Creature",
+        ))
+        producer_ids = {feature["rule_id"] for feature in producer["features"]}
+        listener_ids = {feature["rule_id"] for feature in listener["features"]}
+        self.assertIn("effect.counter.v1", producer_ids)
+        self.assertNotIn("trigger.counter.v1", producer_ids)
+        self.assertIn("trigger.counter.v1", listener_ids)
+        self.assertNotIn("effect.counter.v1", listener_ids)
+        self.assertEqual(
+            next(feature for feature in producer["features"]
+                 if feature["rule_id"] == "effect.counter.v1")["relationship"],
+            "producer",
+        )
+        self.assertEqual(
+            next(feature for feature in listener["features"]
+                 if feature["rule_id"] == "trigger.counter.v1")["relationship"],
+            "payoff",
+        )
+
+    def test_lifegain_and_counter_vocabulary_add_no_interaction_families(self):
+        producer = classify_card(card("You gain 3 life.", types="Sorcery"))
+        listener = classify_card(replace(card(
+            "Whenever you gain life, draw a card.", types="Enchantment"
+        ), title_id=2))
+        counter_source = classify_card(replace(card(
+            "Put a +1/+1 counter on Synthetic Card.", types="Creature"
+        ), title_id=3))
+        counter_listener = classify_card(replace(card(
+            "Whenever one or more +1/+1 counters are put on Synthetic Card, "
+            "draw a card.",
+            types="Creature",
+        ), title_id=4))
+        self.assertEqual(
+            interactions([producer, listener, counter_source, counter_listener]), []
+        )
+
+    def test_lifegain_and_counter_negative_boundaries_do_not_project(self):
+        cases = (
+            "If you would gain life, draw a card instead.",
+            "You gain that much life.",
+            "Remove a +1/+1 counter from target creature.",
+            "Put a charge counter on target artifact.",
+            "Proliferate.",
+        )
+        forbidden = {
+            "effect.lifegain.v1", "trigger.lifegain.v1",
+            "effect.counter.v1", "trigger.counter.v1",
+        }
+        for text in cases:
+            with self.subTest(text=text):
+                result = classify_card(card(text, types="Sorcery"))
+                self.assertTrue(forbidden.isdisjoint(
+                    feature["rule_id"] for feature in result["features"]
+                ))
+                self.assertIn(text, result["unsupported_text"])
+
     def test_threat_is_only_potential(self):
         result = classify_card(card(types="Creature", power="2", toughness="2"))
         self.assertEqual(result["features"][0]["relationship"], "potential")

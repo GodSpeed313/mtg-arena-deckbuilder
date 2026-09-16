@@ -246,14 +246,109 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(self_cost.effects[0].kind, "draw")
         self.assertEqual(another_cost.effects[0].kind, "draw")
 
-    def test_unknown_trigger_does_not_detach_supported_looking_effect(self):
+    def test_explicit_lifegain_preserves_amount_and_controller(self):
+        friendly = decompose_abilities(
+            "You gain 3 life.", card_types="Sorcery"
+        )[0]
+        self.assertEqual(friendly.parse_status, "supported")
+        self.assertEqual(friendly.effects[0].kind, "gain_life")
+        self.assertEqual(friendly.effects[0].amount, 3)
+        self.assertEqual(friendly.effects[0].controller, "you")
+        self.assertTrue(friendly.effects[0].friendly)
+
+        symbolic = decompose_abilities(
+            "You gain X life.", card_types="Sorcery"
+        )[0]
+        self.assertEqual(symbolic.effects[0].amount, "X")
+
+        opponent = decompose_abilities(
+            "Target opponent gains 2 life.", card_types="Sorcery"
+        )[0]
+        self.assertEqual(opponent.effects[0].kind, "gain_life")
+        self.assertEqual(opponent.effects[0].controller, "target_opponent")
+        self.assertFalse(opponent.effects[0].friendly)
+
+    def test_lifegain_trigger_is_listener_not_gain_effect(self):
         row = decompose_abilities(
             "Whenever you gain life, draw a card.", card_types="Enchantment"
         )[0]
-        self.assertEqual(row.parse_status, "unsupported")
-        self.assertIsNone(row.trigger)
-        self.assertFalse(row.effects)
-        self.assertEqual(row.unsupported_remainder[0].scope, "trigger")
+        self.assertEqual(row.parse_status, "supported")
+        self.assertEqual(row.trigger.event, "life_gained")
+        self.assertEqual(row.trigger.controller, "you")
+        self.assertTrue(row.trigger.friendly)
+        self.assertEqual([effect.kind for effect in row.effects], ["draw"])
+
+    def test_plus1_counter_placement_preserves_quantity_and_target(self):
+        self_counter = decompose_abilities(
+            "Put a +1/+1 counter on Synthetic Card.",
+            card_name="Synthetic Card",
+            card_types="Creature",
+        )[0].effects[0]
+        self.assertEqual(self_counter.kind, "put_counter")
+        self.assertEqual(self_counter.amount, 1)
+        self.assertEqual(self_counter.counter_type, "+1/+1")
+        self.assertEqual(self_counter.target, "self")
+
+        target_counter = decompose_abilities(
+            "Put two +1/+1 counters on target creature you control.",
+            card_types="Sorcery",
+        )[0].effects[0]
+        self.assertEqual(target_counter.amount, 2)
+        self.assertEqual(target_counter.counter_type, "+1/+1")
+        self.assertEqual(target_counter.target, "target_creature_you_control")
+
+        another_counter = decompose_abilities(
+            "Put three +1/+1 counters on another target creature.",
+            card_types="Sorcery",
+        )[0].effects[0]
+        self.assertEqual(another_counter.amount, 3)
+        self.assertEqual(another_counter.target, "another_target_creature")
+
+    def test_plus1_counter_trigger_is_listener_not_producer(self):
+        row = decompose_abilities(
+            "Whenever one or more +1/+1 counters are put on Synthetic Card, "
+            "draw a card.",
+            card_name="Synthetic Card",
+            card_types="Creature",
+        )[0]
+        self.assertEqual(row.trigger.event, "counter_placed")
+        self.assertEqual(row.trigger.subject, "self")
+        self.assertEqual([effect.kind for effect in row.effects], ["draw"])
+
+        controlled = decompose_abilities(
+            "Whenever one or more +1/+1 counters are put on a creature you "
+            "control, draw a card.",
+            card_types="Enchantment",
+        )[0]
+        self.assertEqual(controlled.trigger.event, "counter_placed")
+        self.assertEqual(controlled.trigger.subject, "creature_you_control")
+
+    def test_lifegain_and_counter_false_positives_remain_unsupported(self):
+        cases = (
+            "You lose 3 life.",
+            "Players can't gain life.",
+            "If you would gain life, draw a card instead.",
+            "You gain that much life.",
+            "Remove a +1/+1 counter from target creature.",
+            "Move a +1/+1 counter from one creature onto another.",
+            "Proliferate.",
+            "Put a charge counter on target artifact.",
+            "Put a loyalty counter on target planeswalker.",
+            "If you control an artifact, put a +1/+1 counter on target creature.",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                row = decompose_abilities(text, card_types="Sorcery")[0]
+                self.assertEqual(row.parse_status, "unsupported")
+                self.assertFalse(row.effects)
+
+    def test_lifegain_mixed_with_unknown_text_stays_partial(self):
+        row = decompose_abilities(
+            "You gain 3 life. Unmodeled rider.", card_types="Sorcery"
+        )[0]
+        self.assertEqual(row.parse_status, "partial")
+        self.assertEqual(row.effects[0].kind, "gain_life")
+        self.assertEqual(row.unsupported_remainder[0].text, "Unmodeled rider.")
 
     def test_colon_inside_triggered_effect_does_not_become_activation(self):
         row = decompose_abilities(

@@ -13,7 +13,7 @@ from services.abilities import Ability, decompose_abilities
 VERSION = "2"
 ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
          "counterspell", "protection", "recursion", "threat")
-THEMES = ("tokens", "counters", "sacrifice", "graveyard", "typal", "spells",
+THEMES = ("tokens", "counters", "lifegain", "sacrifice", "graveyard", "typal", "spells",
           "artifacts", "enchantments", "lands")
 
 
@@ -48,6 +48,10 @@ INTERACTION_FAMILIES = (
 ABILITY_PROJECTED_RULE_IDS = frozenset({
     "effect.token.v1",
     "effect.noncreature_token.v1",
+    "effect.lifegain.v1",
+    "effect.counter.v1",
+    "trigger.lifegain.v1",
+    "trigger.counter.v1",
     "trigger.spells.v1",
     "trigger.token_draw.v1",
     "cost.sacrifice_draw.v1",
@@ -176,6 +180,49 @@ def _project_ability_features(
                     effect.evidence,
                     "Creates a reviewed named noncreature token; no use or payoff is inferred.",
                 )
+            if (
+                effect.kind == "gain_life"
+                and effect.friendly is True
+                and friendly_trigger
+            ):
+                feature(
+                    "effect.lifegain.v1", "theme", "lifegain", "producer",
+                    effect.evidence,
+                    "Explicitly instructs you to gain life; no strategic value is inferred.",
+                )
+            if (
+                effect.kind == "put_counter"
+                and effect.counter_type == "+1/+1"
+                and effect.friendly is True
+                and friendly_trigger
+            ):
+                feature(
+                    "effect.counter.v1", "theme", "counters", "producer",
+                    effect.evidence,
+                    "Explicitly places +1/+1 counters; no archetype is inferred.",
+                )
+        if (
+            permanent
+            and ability.trigger is not None
+            and ability.trigger.event == "life_gained"
+            and ability.trigger.friendly is True
+        ):
+            feature(
+                "trigger.lifegain.v1", "theme", "lifegain", "payoff",
+                ability.raw_text,
+                "Listens for you gaining life; it does not itself gain life.",
+            )
+        if (
+            permanent
+            and ability.trigger is not None
+            and ability.trigger.event == "counter_placed"
+            and ability.trigger.friendly is True
+        ):
+            feature(
+                "trigger.counter.v1", "theme", "counters", "payoff",
+                ability.raw_text,
+                "Listens for +1/+1 counter placement; it does not itself place counters.",
+            )
         if (
             ability.trigger is not None
             and ability.trigger.event == "spell_cast"

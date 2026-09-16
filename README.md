@@ -318,13 +318,27 @@ intrinsic flying, vigilance, trample, deathtouch, lifelink, haste, reach, menace
 defender, first strike, double strike, hexproof, and indestructible are recognized,
 as is Ward with a braced mana cost. Granted, conditional, reminder-text, and other
 qualified keyword forms remain unsupported, and a token's keyword is not assigned
-to its source card. Structured abilities project the reviewed creature-token and
-named noncreature-token producers, token-entry draw payoff, instant/sorcery cast
-payoff and activated sacrifice/draw outlet feature IDs. Themes also distinguish
-+1/+1 counter placement, a Soldier typal bonus, instant/sorcery cast payoffs,
-reusable sacrifice outlets and self-sacrifice costs. Artifact/enchantment/land
-types establish membership only. Structural-recognition coverage is separate from
-meaningful rules-text understanding. This is not a general Magic rules engine.
+to its source card. Exact `You gain N life` and `You gain X life` effects retain
+their amount, while explicit opponent life gain remains structurally distinct and
+does not become a friendly producer. Exact `Whenever you gain life` abilities are
+listeners/payoffs, not gain-life events; lifelink remains an intrinsic keyword and
+is not treated as guaranteed lifegain. Reviewed +1/+1 counter instructions retain
+explicit quantity and distinguish the source permanent, a target creature, and an
+explicitly different target creature. Exact self or controlled-creature +1/+1
+counter-placement triggers are listeners/payoffs rather than producers.
+
+Structured abilities project the reviewed creature-token and named
+noncreature-token producers, lifegain and +1/+1 counter producers/listeners,
+token-entry draw payoff, instant/sorcery cast payoff and activated sacrifice/draw
+outlet feature IDs. Themes also distinguish a Soldier typal bonus,
+instant/sorcery cast payoffs, reusable sacrifice outlets and self-sacrifice costs.
+Artifact/enchantment/land types establish membership only. Structural-recognition
+coverage is separate from meaningful rules-text understanding. Replacement
+effects, relative amounts such as `that much`, counter movement/removal,
+proliferate, and other named counters remain unsupported. Conditions are retained,
+not evaluated; no stateful
+board evaluation, synergy score, or recommendation is produced. This is not a
+general Magic rules engine.
 
 Only three interactions are recognized: the supported creature-token producer
 with the token-entry draw payoff; that producer with the reusable sacrifice/draw
