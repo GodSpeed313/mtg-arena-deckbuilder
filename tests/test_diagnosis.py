@@ -12,7 +12,7 @@ import unittest
 
 from mtgadb import canonical
 from mtgadb.model import Card, CardPrinting, Deck
-from services.diagnosis import diagnose_analysis
+from services.diagnosis import diagnose_analysis, normalize_analysis
 from services.intelligence import ROLES, THEMES, analyze_deck, classify_card, interactions
 from workbench import main
 
@@ -84,6 +84,21 @@ def land(quantity):
 
 
 class DiagnosisTests(unittest.TestCase):
+    def test_version_1_and_version_2_normalize_to_same_diagnosis_evidence(self):
+        version_one = analysis([
+            entry(1, 4, text=TOKEN, types="Sorcery"),
+            entry(2, 2, text=TOKEN_PAYOFF, types="Enchantment"),
+            land(54),
+        ])
+        version_two = {**deepcopy(version_one), "analysis_version": "2"}
+        normalized = normalize_analysis(version_two)
+        self.assertEqual(normalized["analysis_version"], "1")
+        first = diagnose_analysis(version_one)
+        second = diagnose_analysis(version_two)
+        self.assertEqual(first["plan"], second["plan"])
+        self.assertEqual(first["coverage"], second["coverage"])
+        self.assertEqual(second["analysis_version"], "2")
+
     def test_token_value_moderate_plan(self):
         report = diagnose_analysis(analysis([
             entry(1, 4, text=TOKEN, types="Sorcery"),
@@ -377,6 +392,53 @@ class DiagnosisTests(unittest.TestCase):
             diagnose_analysis({**source, "analysis_version": "999"})
         with self.assertRaises(ValueError):
             diagnose_analysis({**source, "legality": "evaluated"})
+
+    def test_real_card_templates_reach_all_existing_plan_families(self):
+        con = sqlite3.connect(":memory:")
+        con.row_factory = sqlite3.Row
+        self.addCleanup(con.close)
+        con.executescript(canonical.SCHEMA)
+        canonical.load_cards(con, [
+            Card(1, "Young Pyromancer", "{1}{R}", 2, "Creature", power="2",
+                 toughness="1", rules_text=(
+                     "Whenever you cast an instant or sorcery spell, create a 1/1 "
+                     "red Elemental creature token."
+                 )),
+            Card(2, "Caretaker's Talent", "{2}{W}", 3, "Enchantment", rules_text=(
+                "Whenever one or more tokens you control enter, draw a card. "
+                "This ability triggers only once each turn."
+            )),
+            Card(3, "Agency Coroner", "{2}{B}", 3, "Creature", power="3",
+                 toughness="2", rules_text=(
+                     "{2}{B}, Sacrifice another creature: Draw a card. If the "
+                     "sacrificed creature was suspected, draw two cards instead."
+                 )),
+            Card(4, "Lightning Bolt", "{R}", 1, "Instant",
+                 rules_text="Lightning Bolt deals 3 damage to any target."),
+            Card(5, "Archmage of Runes", "{3}{U}{U}", 5, "Creature", power="3",
+                 toughness="6", rules_text=(
+                     "Instant and sorcery spells you cast cost {1} less to cast.\n"
+                     "Whenever you cast an instant or sorcery spell, draw a card."
+                 )),
+            Card(6, "Synthetic Land", types="Land"),
+        ])
+        canonical.load_printings(con, [
+            CardPrinting(101, 1), CardPrinting(201, 2), CardPrinting(301, 3),
+            CardPrinting(401, 4), CardPrinting(501, 5), CardPrinting(601, 6),
+        ])
+        con.commit()
+
+        decks = {
+            "token_value": Deck(main={101: 4, 201: 2, 601: 54}),
+            "token_sacrifice": Deck(main={101: 4, 301: 2, 601: 54}),
+            "spells_matter": Deck(main={401: 4, 501: 2, 601: 54}),
+        }
+        for expected, deck in decks.items():
+            with self.subTest(plan=expected):
+                report = diagnose_analysis(analyze_deck(deck, con))
+                self.assertEqual(report["analysis_version"], "2")
+                self.assertEqual(report["status"], "diagnosed")
+                self.assertEqual(report["plan"]["probable_plan"], expected)
 
     def test_multiple_printings_do_not_inflate_distinct_title_support(self):
         with tempfile.TemporaryDirectory() as tmp:

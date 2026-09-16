@@ -282,15 +282,16 @@ python -m unittest tests.test_snapshot_store -v
 Archive tests use temporary stores and the existing privacy-safe fixture. They do
 not read the live log or retain real account/deck/request identifiers or names.
 
-## Deterministic deck analysis (intelligence pass #1)
+## Deterministic deck analysis
 
 ```powershell
 python workbench.py analyze-deck examples/sample_deck.txt
 ```
 
-This read-only command returns versioned JSON with separate main, sideboard and
+This read-only command returns analysis Version 2 JSON with separate main, sideboard and
 commander reports: land count, quantity-weighted nonland mana curve, card features,
-role/theme copy counts, unsupported text and main-deck interactions. Import errors
+role/theme copy counts, decomposed abilities, rules-text coverage, unsupported text
+and main-deck interactions. Import errors
 return exit code 2 without analyzing a silently truncated deck. Successful analysis
 returns 0 and `legality: not_evaluated`; use `validate` separately for legality.
 
@@ -299,16 +300,20 @@ Counts count each card copy once per label even when multiple rules support it;
 labels overlap, so counts must not be summed to obtain deck size. Unknown printing
 IDs produce partial coverage and resolved-card-only counts in the service API.
 
-The initial rules recognize narrow whole-line forms of targeted destruction,
+The compatibility rules recognize narrow whole-line forms of targeted destruction,
 draw, scry, counterspells, temporary protection, graveyard-to-hand recursion,
 basic-land ramp/fixing, tapping nonlands for mana, and flexible mana production.
 Positive-power creatures are labeled potential threats unless supported text is
 exactly `Defender` or explicitly says that card/creature can't attack; this is
 not a general combat evaluator.
-Themes distinguish an exact Soldier-token producer from a token-entry draw payoff,
+Structured abilities conservatively separate reviewed triggers, costs, effects,
+conditions, qualifiers and unsupported remainders. They project the existing
+creature-token producer, token-entry draw payoff, instant/sorcery cast payoff and
+activated sacrifice/draw outlet feature IDs. Themes also distinguish
 +1/+1 counter placement, a Soldier typal bonus, instant/sorcery cast payoffs,
 reusable sacrifice outlets and self-sacrifice costs. Artifact/enchantment/land
-types establish membership only. This is not general rules-text parsing.
+types establish membership only. Structural-recognition coverage is separate from
+meaningful rules-text understanding. This is not a general Magic rules engine.
 
 Only three interactions are recognized: the supported creature-token producer
 with the token-entry draw payoff; that producer with the reusable sacrifice/draw
@@ -334,7 +339,8 @@ python -m unittest tests.test_intelligence -v
 python workbench.py diagnose-deck examples/sample_deck.txt
 ```
 
-Diagnosis consumes the Pass #1 analysis report. It does not parse card text,
+Diagnosis normalizes Version 1 and Version 2 analysis through their shared flat
+feature and interaction contract. It does not parse card text,
 validate legality, query ownership, or recommend changes. Output separates facts,
 interpretations, warnings, and unknowns. Only the existing token-value,
 token-sacrifice, and spells-matter interaction families can support a probable

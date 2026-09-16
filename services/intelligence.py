@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import re
 import sqlite3
 
 from mtgadb.model import Card, Deck
 from mtgadb.query import CardQueryEngine
+from services.abilities import Ability, decompose_abilities
 
-VERSION = "1"
+VERSION = "2"
 ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
          "counterspell", "protection", "recursion", "threat")
 THEMES = ("tokens", "counters", "sacrifice", "graveyard", "typal", "spells",
@@ -43,6 +44,13 @@ INTERACTION_FAMILIES = (
         "to draw a card; the token is consumed.",
     ),
 )
+
+ABILITY_PROJECTED_RULE_IDS = frozenset({
+    "effect.token.v1",
+    "trigger.spells.v1",
+    "trigger.token_draw.v1",
+    "cost.sacrifice_draw.v1",
+})
 
 # Whole ability lines only. No substring/keyword classification: conditional,
 # modal, opponent-directed and unfamiliar variants deliberately remain unknown.
@@ -85,6 +93,121 @@ RULES = (
 )
 
 
+def _ratio(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 6) if denominator else 0.0
+
+
+def _ability_coverage(abilities: tuple[Ability, ...]) -> dict:
+    total = len(abilities)
+    structural = sum(ability.kind != "unsupported" for ability in abilities)
+    meaningful = sum(
+        ability.parse_status in {"supported", "partial"} for ability in abilities
+    )
+    return {
+        "ability_count": total,
+        "structurally_recognized_ability_count": structural,
+        "meaningfully_understood_ability_count": meaningful,
+        "structural_recognition": _ratio(structural, total),
+        "meaningful_understanding": _ratio(meaningful, total),
+        "supported_ability_count": sum(
+            ability.parse_status == "supported" for ability in abilities
+        ),
+        "partial_ability_count": sum(
+            ability.parse_status == "partial" for ability in abilities
+        ),
+        "unsupported_ability_count": sum(
+            ability.parse_status == "unsupported" for ability in abilities
+        ),
+        "anomalous_ability_count": sum(
+            ability.parse_status == "anomalous" for ability in abilities
+        ),
+    }
+
+
+def _project_ability_features(
+    abilities: tuple[Ability, ...], *, permanent: bool
+) -> list[dict]:
+    """Project reviewed ability semantics into the stable Pass #1 feature schema."""
+    projected = []
+
+    def feature(rule_id, dimension, label, relationship, evidence, explanation):
+        projected.append(dict(
+            rule_id=rule_id,
+            dimension=dimension,
+            label=label,
+            relationship=relationship,
+            evidence=evidence,
+            explanation=explanation,
+        ))
+
+    for ability in abilities:
+        if ability.parse_status not in {"supported", "partial"}:
+            continue
+        draws = [effect for effect in ability.effects if effect.kind == "draw"]
+        for effect in ability.effects:
+            friendly_trigger = ability.trigger is None or ability.trigger.friendly is True
+            if (
+                effect.kind == "create_creature_token"
+                and effect.friendly is True
+                and friendly_trigger
+            ):
+                feature(
+                    "effect.token.v1", "theme", "tokens", "producer",
+                    effect.evidence,
+                    "Creates a friendly creature token; no payoff is inferred.",
+                )
+        if (
+            ability.trigger is not None
+            and ability.trigger.event == "spell_cast"
+            and ability.trigger.friendly is True
+            and draws
+        ):
+            feature(
+                "trigger.spells.v1", "role", "card_draw", "conditional",
+                ability.raw_text,
+                "Draw requires you to cast an instant or sorcery spell.",
+            )
+            feature(
+                "trigger.spells.v1", "theme", "spells", "payoff",
+                ability.raw_text,
+                "Draw requires you to cast an instant or sorcery spell.",
+            )
+        if (
+            ability.trigger is not None
+            and ability.trigger.event == "token_enters"
+            and ability.trigger.friendly is True
+            and draws
+        ):
+            feature(
+                "trigger.token_draw.v1", "role", "card_draw", "conditional",
+                ability.raw_text,
+                "Draw requires a token to enter under your control.",
+            )
+            feature(
+                "trigger.token_draw.v1", "theme", "tokens", "payoff",
+                ability.raw_text,
+                "Draw requires a token to enter under your control.",
+            )
+        sacrifice_another = any(
+            cost.kind == "sacrifice"
+            and cost.subject == "another_creature"
+            and cost.timing == "activated"
+            for cost in ability.costs
+        )
+        if permanent and ability.kind == "activated" and sacrifice_another and draws:
+            feature(
+                "cost.sacrifice_draw.v1", "role", "card_draw", "conditional",
+                ability.raw_text,
+                "Activated permanent ability sacrifices another creature to draw.",
+            )
+            feature(
+                "cost.sacrifice_draw.v1", "theme", "sacrifice", "consumer",
+                ability.raw_text,
+                "Activated permanent ability consumes another creature as its cost.",
+            )
+    return projected
+
+
 def classify_card(card: Card) -> dict:
     features = []
     types = set(card.types.split())
@@ -120,10 +243,21 @@ def classify_card(card: Card) -> dict:
             not any(re.fullmatch(pattern, line.strip(), re.I) for _, pattern, _, _ in RULES)
             for line in text_lines)
     anomalous = card.resolution.value == "anomaly"
+    abilities = decompose_abilities(
+        card.rules_text,
+        card_name=card.name,
+        card_types=card.types,
+        canonical_anomaly=anomalous,
+    )
+    projected_features = _project_ability_features(abilities, permanent=permanent)
+    features.extend(projected_features)
     text_supported = not anomalous and not contextual
+    matched_lines = set()
     for line in text_lines:
         matched = False
         for rule_id, pattern, outputs, explanation in RULES:
+            if rule_id in ABILITY_PROJECTED_RULE_IDS:
+                continue
             if not text_supported or not re.fullmatch(pattern, line, re.I):
                 continue
             if rule_id.startswith(("cost.", "trigger.")) and not permanent:
@@ -143,14 +277,25 @@ def classify_card(card: Card) -> dict:
                 add("ability.any_ramp.v1", "role", "ramp", "producer", line,
                     "Nonland permanent is an additional mana source.")
             matched = True
-        if not matched:
-            unsupported.append(line)
+        if matched:
+            matched_lines.add(line)
+    for ability in abilities:
+        if ability.raw_text in matched_lines or ability.parse_status == "supported":
+            continue
+        if ability.parse_status == "partial":
+            unsupported.extend(
+                remainder.text for remainder in ability.unsupported_remainder
+            )
+        else:
+            unsupported.append(ability.raw_text)
     features.sort(key=lambda f: (f["rule_id"], f["dimension"], f["label"], f["evidence"]))
     return dict(title_id=card.title_id, name=card.name, features=features,
                 status="unclassified" if not features else "partial" if unsupported else "classified",
                 unsupported_text=sorted(set(unsupported)),
                 text_status="anomalous" if anomalous else "no_text" if not card.rules_text else
                             "unsupported" if unsupported else "supported",
+                abilities=[asdict(ability) for ability in abilities],
+                ability_coverage=_ability_coverage(abilities),
                 unclassified_dimensions=[dim for dim in ("role", "theme")
                                          if not any(f["dimension"] == dim for f in features)])
 
@@ -199,11 +344,23 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
         rows, curve = [], Counter()
         roles, themes = Counter(), Counter()
         lands = 0
+        ability_totals = Counter()
         for title_id in sorted(catalog):
             card, quantity = catalog[title_id], quantities[title_id]
             row = classify_card(card)
             row["quantity"] = quantity
             rows.append(row)
+            coverage = row["ability_coverage"]
+            for key in (
+                "ability_count",
+                "structurally_recognized_ability_count",
+                "meaningfully_understood_ability_count",
+                "supported_ability_count",
+                "partial_ability_count",
+                "unsupported_ability_count",
+                "anomalous_ability_count",
+            ):
+                ability_totals[key] += coverage[key] * quantity
             if "Land" in card.types.split():
                 lands += quantity
             else:
@@ -212,14 +369,34 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
                 # Count a card's copies once per label, not once per matched rule.
                 for label in {f["label"] for f in row["features"] if f["dimension"] == dim}:
                     counts[label] += quantity
+        ability_count = ability_totals["ability_count"]
+        rules_text_coverage = {
+            **{key: ability_totals[key] for key in (
+                "ability_count",
+                "structurally_recognized_ability_count",
+                "meaningfully_understood_ability_count",
+                "supported_ability_count",
+                "partial_ability_count",
+                "unsupported_ability_count",
+                "anomalous_ability_count",
+            )},
+            "structural_recognition": _ratio(
+                ability_totals["structurally_recognized_ability_count"], ability_count,
+            ),
+            "meaningful_understanding": _ratio(
+                ability_totals["meaningfully_understood_ability_count"], ability_count,
+            ),
+            "weighting": "card_copy_times_ability",
+        }
         zones[zone_name] = dict(total_count=sum(zone.values()), resolved_count=sum(quantities.values()),
                                 land_count=lands, nonland_mana_curve={str(k): curve[k] for k in sorted(curve)},
                                 role_counts={k: roles[k] for k in ROLES}, theme_counts={k: themes[k] for k in THEMES},
                                 cards=rows, diagnostics=diagnostics,
+                                rules_text_coverage=rules_text_coverage,
                                 coverage="partial" if diagnostics else "resolved")
     return dict(analysis_version=VERSION, legality="not_evaluated", zones=zones,
                 interactions=interactions(zones["main"]["cards"]),
-                limitations=["Only whole supported ability lines are interpreted; other text remains unsupported.",
+                limitations=["Only reviewed decomposed ability shapes are interpreted; other text remains unsupported.",
                              "Counts describe recognized features, not deck quality or complete role coverage.",
                              "Curve uses canonical mana value, not alternative costs or mana-source probabilities.",
                              "Interactions are conditional possibilities, not combo or legality proofs."])

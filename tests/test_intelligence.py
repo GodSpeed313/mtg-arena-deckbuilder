@@ -49,13 +49,25 @@ class ClassificationTests(unittest.TestCase):
         for text in ("Target opponent draws two cards.", "You can't draw cards.",
                      "If you control a creature, draw two cards.", "Draw two cards, then discard two cards.",
                      "This spell can't be countered.", "Destroy all creatures.",
-                     "Choose one —\nDraw two cards.",
-                     "As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards."):
+                     "Choose one —\nDraw two cards."):
             with self.subTest(text=text):
                 result = classify_card(card(text))
                 self.assertEqual(labels(result), set())
                 self.assertEqual(result["status"], "unclassified")
                 self.assertTrue(result["unsupported_text"])
+
+        additional_cost = classify_card(card(
+            "As an additional cost to cast this spell, sacrifice a creature.\n"
+            "Draw two cards.",
+            types="Sorcery",
+        ))
+        self.assertEqual(labels(additional_cost), set())
+        self.assertEqual(additional_cost["status"], "classified")
+        self.assertEqual(additional_cost["unsupported_text"], [])
+        self.assertEqual(
+            additional_cost["ability_coverage"]["meaningfully_understood_ability_count"],
+            2,
+        )
 
     def test_draw_and_selection_distinct(self):
         self.assertEqual(labels(classify_card(card("Scry 2."))), {"card_selection"})
@@ -126,6 +138,75 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(result["status"], "unclassified")
         self.assertEqual(result["text_status"], "unsupported")
         self.assertEqual(result["unsupported_text"], ["Choose one —", "Draw two cards."])
+
+    def test_v2_projects_real_card_abilities_conservatively(self):
+        young = classify_card(Card(
+            1, "Young Pyromancer", types="Creature", power="2", toughness="1",
+            rules_text=("Whenever you cast an instant or sorcery spell, create a "
+                        "1/1 red Elemental creature token."),
+        ))
+        caretaker = classify_card(Card(
+            2, "Caretaker's Talent", types="Enchantment",
+            rules_text=("Whenever one or more tokens you control enter, draw a card. "
+                        "This ability triggers only once each turn."),
+        ))
+        agency = classify_card(Card(
+            3, "Agency Coroner", types="Creature", power="3", toughness="2",
+            rules_text=("{2}{B}, Sacrifice another creature: Draw a card. "
+                        "If the sacrificed creature was suspected, draw two cards instead."),
+        ))
+        archmage = classify_card(Card(
+            4, "Archmage of Runes", types="Creature", power="3", toughness="6",
+            rules_text=("Instant and sorcery spells you cast cost {1} less to cast.\n"
+                        "Whenever you cast an instant or sorcery spell, draw a card."),
+        ))
+        deadly = classify_card(Card(
+            5, "Deadly Dispute", types="Instant",
+            rules_text=("As an additional cost to cast this spell, sacrifice an artifact "
+                        "or creature.\nDraw two cards and create a Treasure token."),
+        ))
+        treasure = classify_card(Card(
+            6, "Treasure Spell", types="Sorcery", rules_text="Create a Treasure token."
+        ))
+        opponent = classify_card(Card(
+            7, "Opponent Trigger", types="Enchantment",
+            rules_text=("Whenever an opponent casts an instant or sorcery spell, create a "
+                        "1/1 white Soldier creature token."),
+        ))
+
+        ids = lambda row: {feature["rule_id"] for feature in row["features"]}
+        self.assertIn("effect.token.v1", ids(young))
+        self.assertIn("trigger.token_draw.v1", ids(caretaker))
+        self.assertIn("cost.sacrifice_draw.v1", ids(agency))
+        self.assertIn("trigger.spells.v1", ids(archmage))
+        self.assertNotIn("cost.sacrifice_draw.v1", ids(deadly))
+        self.assertNotIn("effect.token.v1", ids(treasure))
+        self.assertNotIn("effect.token.v1", ids(opponent))
+        self.assertEqual(agency["abilities"][0]["costs"][0]["timing"], "activated")
+        self.assertEqual(
+            agency["abilities"][0]["effects"][1]["conditions"][0]["value"],
+            "suspected",
+        )
+        self.assertEqual(
+            caretaker["abilities"][0]["qualifiers"][0]["kind"], "once_each_turn"
+        )
+
+        rows = interactions([young, caretaker, agency, archmage, deadly])
+        self.assertEqual(
+            {row["rule_id"] for row in rows},
+            {
+                "interaction.token_draw.v1",
+                "interaction.spell_draw.v1",
+                "interaction.token_sacrifice.v1",
+            },
+        )
+
+    def test_structural_and_meaningful_ability_coverage_are_distinct(self):
+        treasure = classify_card(card("Create a Treasure token.", types="Sorcery"))
+        unknown = classify_card(card("Unmodeled text.", types="Enchantment"))
+        self.assertEqual(treasure["ability_coverage"]["structural_recognition"], 1.0)
+        self.assertEqual(treasure["ability_coverage"]["meaningful_understanding"], 0.0)
+        self.assertEqual(unknown["ability_coverage"]["structural_recognition"], 0.0)
 
     def test_rule_ids_unique(self):
         self.assertEqual(len(RULES), len({r[0] for r in RULES}))
@@ -252,6 +333,17 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(main_zone["theme_counts"]["spells"],7)
         self.assertEqual(result["zones"]["sideboard"]["role_counts"]["card_draw"],2)
         self.assertEqual(result["legality"],"not_evaluated")
+
+    def test_analysis_v2_includes_abilities_and_copy_weighted_coverage(self):
+        result = analyze_deck(Deck(main={101: 2, 301: 4}), self.con)
+        self.assertEqual(result["analysis_version"], "2")
+        cards = result["zones"]["main"]["cards"]
+        self.assertTrue(all("abilities" in row and "ability_coverage" in row for row in cards))
+        coverage = result["zones"]["main"]["rules_text_coverage"]
+        self.assertEqual(coverage["ability_count"], 8)
+        self.assertEqual(coverage["structurally_recognized_ability_count"], 8)
+        self.assertEqual(coverage["meaningfully_understood_ability_count"], 8)
+        self.assertEqual(coverage["weighting"], "card_copy_times_ability")
 
     def test_order_and_no_writes(self):
         before = self.con.total_changes

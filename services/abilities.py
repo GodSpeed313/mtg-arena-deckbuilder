@@ -123,6 +123,17 @@ def _parse_trigger(text: str) -> Trigger | None:
         subject, controller, friendly = spell_subjects[value]
         return Trigger("spell_cast", subject, controller, friendly, text)
 
+    token_subjects = {
+        "a creature token enters the battlefield under your control": (
+            "creature_token", "you", True,
+        ),
+        "one or more tokens you control enter": ("tokens", "you", True),
+        "a token an opponent controls enters": ("token", "opponent", False),
+    }
+    if value in token_subjects:
+        subject, controller, friendly = token_subjects[value]
+        return Trigger("token_enters", subject, controller, friendly, text)
+
     death_subjects = {
         "one or more other creatures die": ("other_creatures", "any", None),
         "one or more creatures die": ("creatures", "any", None),
@@ -315,7 +326,10 @@ def _ability(
     return Ability(
         ability_id=ability_id,
         source_index=source_index,
-        kind=kind if has_supported else "unsupported",
+        # Preserve a recognized syntactic shape even when none of its semantic
+        # components are currently understood.  parse_status carries that
+        # distinction for coverage reporting.
+        kind=kind,
         raw_text=raw_text,
         parse_status=_status(has_supported, unsupported),
         trigger=trigger,
@@ -406,17 +420,22 @@ def decompose_abilities(
     lines = tuple(line.strip() for line in rules_text.splitlines() if line.strip())
     types = frozenset(card_types.split())
     result = []
+    unsupported_modal = any(
+        re.match(r"^Choose (?:one|two|one or more)\b", line, re.I) for line in lines
+    )
     for index, line in enumerate(lines, start=1):
         ability_id = f"ability.{index:03d}"
-        if canonical_anomaly:
+        if canonical_anomaly or unsupported_modal:
+            reason = "canonical_anomaly" if canonical_anomaly else "unsupported_modal"
+            status = "anomalous" if canonical_anomaly else "unsupported"
             result.append(Ability(
                 ability_id=ability_id,
                 source_index=index,
                 kind="unsupported",
                 raw_text=line,
-                parse_status="anomalous",
+                parse_status=status,
                 unsupported_remainder=(UnsupportedRemainder(
-                    line, "ability", "canonical_anomaly"
+                    line, "ability", reason
                 ),),
             ))
             continue

@@ -76,6 +76,29 @@ class AbilityDecompositionTests(unittest.TestCase):
         self.assertEqual(token.token.colors, ("red",))
         self.assertEqual(token.token.subtypes, ("Elemental",))
 
+    def test_friendly_token_entry_trigger_keeps_frequency_qualifier(self):
+        ability = decompose_abilities(
+            "Whenever one or more tokens you control enter, draw a card. "
+            "This ability triggers only once each turn.",
+            card_name="Caretaker's Talent",
+            card_types="Enchantment",
+        )[0]
+        self.assertEqual(ability.kind, "triggered")
+        self.assertEqual(ability.trigger.event, "token_enters")
+        self.assertTrue(ability.trigger.friendly)
+        self.assertEqual(ability.effects[0].kind, "draw")
+        self.assertEqual(ability.qualifiers[0].kind, "once_each_turn")
+
+    def test_modal_layout_does_not_expose_option_as_standalone_effect(self):
+        rows = decompose_abilities(
+            "Choose one —\nDraw two cards.", card_types="Sorcery"
+        )
+        self.assertTrue(all(row.parse_status == "unsupported" for row in rows))
+        self.assertTrue(all(not row.effects for row in rows))
+        self.assertTrue(all(
+            row.unsupported_remainder[0].reason == "unsupported_modal" for row in rows
+        ))
+
     def test_lightning_bolt_numeric_damage(self):
         rows = decompose_abilities(
             "Lightning Bolt deals 3 damage to any target.",

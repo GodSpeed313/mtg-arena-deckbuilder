@@ -1,4 +1,4 @@
-"""Deterministic diagnosis over Deck Intelligence Pass #1 output.
+"""Deterministic diagnosis over normalized Deck Intelligence output.
 
 This module does not read card text, query a database, validate legality, or
 recommend changes. Unknown evidence limits conclusions instead of counting
@@ -19,6 +19,25 @@ PLAN_FAMILIES = {
 }
 
 STRATEGIC_RELATIONSHIPS = frozenset({"producer", "enabler", "consumer", "payoff"})
+
+
+def normalize_analysis(analysis: dict) -> dict:
+    """Return the flat-feature view shared by analysis Versions 1 and 2.
+
+    Version 2 adds ability records and coverage fields while retaining the
+    Version 1 zones, flat features and interaction rows.  Diagnosis consumes
+    only that compatibility surface and does not reinterpret ability text.
+    """
+    version = analysis.get("analysis_version")
+    if version not in {"1", "2"}:
+        raise ValueError("unsupported deck analysis version")
+    return {
+        "analysis_version": "1",
+        "legality": analysis.get("legality"),
+        "zones": analysis.get("zones"),
+        "interactions": analysis.get("interactions"),
+        "limitations": analysis.get("limitations", []),
+    }
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -344,19 +363,19 @@ def _role_interpretations(main: dict) -> list[dict]:
 
 
 def diagnose_analysis(analysis: dict, *, reference_main_size: int | None = None) -> dict:
-    """Diagnose one Pass #1 report without card-text or database access."""
-    if analysis.get("analysis_version") != "1":
-        raise ValueError("unsupported deck analysis version")
-    if analysis.get("legality") != "not_evaluated":
+    """Diagnose one normalized report without card-text or database access."""
+    source_version = analysis.get("analysis_version")
+    normalized = normalize_analysis(analysis)
+    if normalized.get("legality") != "not_evaluated":
         raise ValueError("diagnosis requires analysis with legality not evaluated")
-    zones = analysis["zones"]
+    zones = normalized["zones"]
     main = zones["main"]
     reference_size = main["total_count"] if reference_main_size is None else reference_main_size
     if type(reference_size) is not int or reference_size < 0:
         raise ValueError("reference main size must be a nonnegative integer")
 
     coverage = {zone: _coverage(zones[zone]) for zone in ("main", "sideboard", "commander")}
-    families = _family_support(main, analysis["interactions"], reference_size)
+    families = _family_support(main, normalized["interactions"], reference_size)
     candidates = [_candidate(family, coverage["main"], reference_size) for family in families]
     status, plan, plan_unknowns = _plan(candidates, reference_size)
 
@@ -383,7 +402,7 @@ def diagnose_analysis(analysis: dict, *, reference_main_size: int | None = None)
         unknowns.append({
             "id": "unknown.commander_integration.v1", "scope": "commander",
             "message": "commander-to-main integration not assessed",
-            "reason": "Pass #1 interactions are main-deck only",
+            "reason": "compatible interactions are main-deck only",
         })
 
     facts = [
@@ -404,7 +423,7 @@ def diagnose_analysis(analysis: dict, *, reference_main_size: int | None = None)
     ]
     return {
         "diagnosis_version": DIAGNOSIS_VERSION,
-        "analysis_version": analysis["analysis_version"],
+        "analysis_version": source_version,
         "status": status,
         "message": "insufficient evidence to diagnose" if status == "insufficient_evidence" else
                    "deterministic diagnosis available",
@@ -412,6 +431,6 @@ def diagnose_analysis(analysis: dict, *, reference_main_size: int | None = None)
         "coverage": coverage,
         "facts": facts,
         "interpretations": _role_interpretations(main),
-        "warnings": _package_warnings(main, analysis["interactions"]),
+        "warnings": _package_warnings(main, normalized["interactions"]),
         "unknowns": sorted(unknowns, key=lambda item: (item["scope"], item["id"])),
     }
