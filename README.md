@@ -281,3 +281,49 @@ python -m unittest tests.test_snapshot_store -v
 
 Archive tests use temporary stores and the existing privacy-safe fixture. They do
 not read the live log or retain real account/deck/request identifiers or names.
+
+## Deterministic deck analysis (intelligence pass #1)
+
+```powershell
+python workbench.py analyze-deck examples/sample_deck.txt
+```
+
+This read-only command returns versioned JSON with separate main, sideboard and
+commander reports: land count, quantity-weighted nonland mana curve, card features,
+role/theme copy counts, unsupported text and main-deck interactions. Import errors
+return exit code 2 without analyzing a silently truncated deck. Successful analysis
+returns 0 and `legality: not_evaluated`; use `validate` separately for legality.
+
+Each feature carries a stable rule ID, exact evidence, relationship and explanation.
+Counts count each card copy once per label even when multiple rules support it;
+labels overlap, so counts must not be summed to obtain deck size. Unknown printing
+IDs produce partial coverage and resolved-card-only counts in the service API.
+
+The initial rules recognize narrow whole-line forms of targeted destruction,
+draw, scry, counterspells, temporary protection, graveyard-to-hand recursion,
+basic-land ramp/fixing, tapping nonlands for mana, and flexible mana production.
+Positive-power creatures are labeled potential threats unless supported text is
+exactly `Defender` or explicitly says that card/creature can't attack; this is
+not a general combat evaluator.
+Themes distinguish an exact Soldier-token producer from a token-entry draw payoff,
++1/+1 counter placement, a Soldier typal bonus, instant/sorcery cast payoffs,
+reusable sacrifice outlets and self-sacrifice costs. Artifact/enchantment/land
+types establish membership only. This is not general rules-text parsing.
+
+Only three interactions are recognized: the supported creature-token producer
+with the token-entry draw payoff; that producer with the reusable sacrifice/draw
+outlet; and an instant/sorcery with the supported spell-cast draw payoff. Every
+interaction includes both classified features and states its prerequisites.
+Shared themes alone never produce interactions. There is no numeric synergy score.
+
+Unrecognized wording, modal/conditional contexts outside the rules, and anomalous
+canonical text are unsupported. A card may have recognized structural features
+while its text or role remains unclassified. Empty text is reported explicitly.
+Mana value is canonical printed-cost arithmetic, not casting feasibility; alternative
+costs, card-face choices, source probabilities and game simulation are outside scope.
+No ownership, crafting, archive conversion, automatic construction or replacement
+is performed. Analysis never changes the database or validator rules.
+
+```powershell
+python -m unittest tests.test_intelligence -v
+```

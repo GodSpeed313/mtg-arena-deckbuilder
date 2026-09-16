@@ -14,6 +14,7 @@ from mtgadb.modes import OperatingMode
 from mtgadb.providers.arena_log import ArenaLogProvider
 from services.exporter import export_arena_deck, import_arena_deck
 from services.validator import DeckRules, validate_deck
+from services.intelligence import analyze_deck
 
 
 ROOT = Path(__file__).parent
@@ -150,6 +151,19 @@ def show_arena_snapshot_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def analyze_deck_command(args: argparse.Namespace) -> int:
+    con = canonical.open_db(args.database)
+    try:
+        parsed = import_arena_deck(args.deck.read_text(encoding="utf-8-sig"), con)
+        if not parsed.ok:
+            print(json.dumps({"status": "import_error", "issues": [asdict(i) for i in parsed.issues]}, indent=2))
+            return 2
+        print(json.dumps(analyze_deck(parsed.deck, con), indent=2))
+        return 0
+    finally:
+        con.close()
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -194,6 +208,10 @@ def parser() -> argparse.ArgumentParser:
     show.set_defaults(func=show_arena_snapshot_command)
     for command in (save, listing, show):
         command.add_argument("--store", type=Path, default=ROOT / "arena_snapshots.db")
+
+    analysis = sub.add_parser("analyze-deck", help="read-only deterministic deck analysis; not legality validation")
+    analysis.add_argument("deck", type=Path)
+    analysis.set_defaults(func=analyze_deck_command)
 
     normalize = sub.add_parser(
         "normalize", help="resolve and render a canonical Arena decklist"
