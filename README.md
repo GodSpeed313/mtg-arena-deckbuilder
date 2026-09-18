@@ -300,6 +300,18 @@ Counts count each card copy once per label even when multiple rules support it;
 labels overlap, so counts must not be summed to obtain deck size. Unknown printing
 IDs produce partial coverage and resolved-card-only counts in the service API.
 
+Functional-package model Version 1 derives reusable card jobs only from those
+stable reviewed feature IDs. The current package vocabulary is threats,
+interaction, card advantage, mana/ramp, protection, recursion, token production,
+lifegain, +1/+1 counters, sacrifice, spell-matters, and graveyard interaction.
+A card may contribute to several packages, and every contribution retains the
+exact classified features that support it. Zone package counts count each card's
+copies once per package even when several features support that same package.
+Packages are functional descriptions, not archetype assignments: they do not
+identify deck needs, create dependency edges, measure package sufficiency, score
+synergy, compare candidates, or recommend cards. Those later reasoning layers
+must consume the evidence rather than reinterpret card text.
+
 The compatibility rules recognize narrow whole-line forms of targeted destruction,
 draw, scry, counterspells, temporary protection, graveyard-to-hand recursion,
 basic-land ramp/fixing, tapping nonlands for mana, and flexible mana production.

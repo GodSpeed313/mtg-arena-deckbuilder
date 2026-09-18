@@ -9,6 +9,9 @@ import sqlite3
 from mtgadb.model import Card, Deck
 from mtgadb.query import CardQueryEngine
 from services.abilities import Ability, decompose_abilities
+from services.packages import (
+    FUNCTIONAL_PACKAGES, PACKAGE_MODEL_VERSION, functional_package_contributions,
+)
 
 VERSION = "2"
 ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
@@ -468,7 +471,9 @@ def classify_card(card: Card) -> dict:
         else:
             unsupported.append(ability.raw_text)
     features.sort(key=lambda f: (f["rule_id"], f["dimension"], f["label"], f["evidence"]))
+    functional_packages = functional_package_contributions(features)
     return dict(title_id=card.title_id, name=card.name, features=features,
+                functional_packages=functional_packages,
                 status="unclassified" if not features else "partial" if unsupported else "classified",
                 unsupported_text=sorted(set(unsupported)),
                 text_status="anomalous" if anomalous else "no_text" if not card.rules_text else
@@ -521,7 +526,7 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
             quantities[card.title_id] += quantity
             catalog[card.title_id] = card
         rows, curve = [], Counter()
-        roles, themes = Counter(), Counter()
+        roles, themes, package_counts = Counter(), Counter(), Counter()
         lands = 0
         ability_totals = Counter()
         for title_id in sorted(catalog):
@@ -548,6 +553,8 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
                 # Count a card's copies once per label, not once per matched rule.
                 for label in {f["label"] for f in row["features"] if f["dimension"] == dim}:
                     counts[label] += quantity
+            for package in row["functional_packages"]:
+                package_counts[package["label"]] += quantity
         ability_count = ability_totals["ability_count"]
         rules_text_coverage = {
             **{key: ability_totals[key] for key in (
@@ -570,12 +577,19 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
         zones[zone_name] = dict(total_count=sum(zone.values()), resolved_count=sum(quantities.values()),
                                 land_count=lands, nonland_mana_curve={str(k): curve[k] for k in sorted(curve)},
                                 role_counts={k: roles[k] for k in ROLES}, theme_counts={k: themes[k] for k in THEMES},
+                                functional_package_counts={
+                                    package.label: package_counts[package.label]
+                                    for package in FUNCTIONAL_PACKAGES
+                                },
                                 cards=rows, diagnostics=diagnostics,
                                 rules_text_coverage=rules_text_coverage,
                                 coverage="partial" if diagnostics else "resolved")
-    return dict(analysis_version=VERSION, legality="not_evaluated", zones=zones,
+    return dict(analysis_version=VERSION,
+                functional_package_model_version=PACKAGE_MODEL_VERSION,
+                legality="not_evaluated", zones=zones,
                 interactions=interactions(zones["main"]["cards"]),
                 limitations=["Only reviewed decomposed ability shapes are interpreted; other text remains unsupported.",
                              "Counts describe recognized features, not deck quality or complete role coverage.",
+                             "Functional packages describe evidenced card jobs, not deck needs, archetypes, or recommendations.",
                              "Curve uses canonical mana value, not alternative costs or mana-source probabilities.",
                              "Interactions are conditional possibilities, not combo or legality proofs."])
