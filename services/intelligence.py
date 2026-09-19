@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 import re
 import sqlite3
 
 from mtgadb.model import Card, Deck
 from mtgadb.query import CardQueryEngine
 from services.abilities import Ability, decompose_abilities
+from services.dependencies import (
+    DEPENDENCY_MODEL_VERSION,
+    INTERACTION_FAMILIES,
+    InteractionFamily,
+    dependency_findings,
+)
 from services.packages import (
     FUNCTIONAL_PACKAGES, PACKAGE_MODEL_VERSION, functional_package_contributions,
 )
@@ -19,34 +25,6 @@ ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
 THEMES = ("tokens", "counters", "lifegain", "sacrifice", "graveyard", "typal", "spells",
           "artifacts", "enchantments", "lands")
 
-
-@dataclass(frozen=True)
-class InteractionFamily:
-    """One directional relationship between two classified feature rules."""
-
-    family_id: str
-    source_feature_rule_id: str
-    beneficiary_feature_rule_id: str
-    explanation: str
-
-
-INTERACTION_FAMILIES = (
-    InteractionFamily(
-        "interaction.token_draw.v1", "effect.token.v1", "trigger.token_draw.v1",
-        "Creating this creature token can trigger the other card's draw ability "
-        "while that payoff is on the battlefield.",
-    ),
-    InteractionFamily(
-        "interaction.spell_draw.v1", "type.spells.v1", "trigger.spells.v1",
-        "Casting this instant/sorcery can trigger the other card's draw ability "
-        "while that payoff is on the battlefield.",
-    ),
-    InteractionFamily(
-        "interaction.token_sacrifice.v1", "effect.token.v1", "cost.sacrifice_draw.v1",
-        "The created creature token can pay the other permanent's sacrifice cost "
-        "to draw a card; the token is consumed.",
-    ),
-)
 
 ABILITY_PROJECTED_RULE_IDS = frozenset({
     "effect.token.v1",
@@ -581,15 +559,18 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
                                     package.label: package_counts[package.label]
                                     for package in FUNCTIONAL_PACKAGES
                                 },
+                                dependencies=dependency_findings(rows),
                                 cards=rows, diagnostics=diagnostics,
                                 rules_text_coverage=rules_text_coverage,
                                 coverage="partial" if diagnostics else "resolved")
     return dict(analysis_version=VERSION,
                 functional_package_model_version=PACKAGE_MODEL_VERSION,
+                dependency_model_version=DEPENDENCY_MODEL_VERSION,
                 legality="not_evaluated", zones=zones,
                 interactions=interactions(zones["main"]["cards"]),
                 limitations=["Only reviewed decomposed ability shapes are interpreted; other text remains unsupported.",
                              "Counts describe recognized features, not deck quality or complete role coverage.",
                              "Functional packages describe evidenced card jobs, not deck needs, archetypes, or recommendations.",
+                             "Dependency findings describe zone-local structural support, not sufficiency, quality, or recommendations.",
                              "Curve uses canonical mana value, not alternative costs or mana-source probabilities.",
                              "Interactions are conditional possibilities, not combo or legality proofs."])

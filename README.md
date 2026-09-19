@@ -387,6 +387,29 @@ outlet; and an instant/sorcery with the supported spell-cast draw payoff. Every
 interaction includes both classified features and states its prerequisites.
 Shared themes alone never produce interactions. There is no numeric synergy score.
 
+### Deterministic dependency support (Pass #5B)
+
+Deck analysis includes dependency model Version 1. It derives zone-local support
+facts only from stable reviewed feature IDs and their existing relationship values;
+it does not parse rules text again. The exact families are lifegain producer to
+lifegain payoff, +1/+1 counter producer to counter payoff, creature-token producer
+to token-entry payoff, creature-token producer to sacrifice consumer, and
+instant/sorcery enabler to spell-cast payoff. The last three reuse the same exact
+feature-side definitions as the existing interaction registry.
+
+An active family is `supported`, `payoff_without_enabler`, or
+`enabler_without_payoff`; families with neither side are omitted. Main, sideboard,
+and commander are calculated independently. Each side retains card identity, name,
+quantity, qualifying feature IDs, and exact feature evidence. Copy totals count a
+card once per side even if it has multiple qualifying feature rows. Lifelink is not
+a lifegain producer, named noncreature tokens are not creature-token producers, and
+unsupported text creates no dependency evidence.
+
+Dependency findings describe structural support among reviewed features. They do
+not establish deck quality, package sufficiency, optimal ratios, archetype
+correctness, or recommended changes. No scores, thresholds, candidate selection,
+ownership filtering, or new rules-text interpretation are part of this model.
+
 Unrecognized wording, modal/conditional contexts outside the rules, and anomalous
 canonical text are unsupported. A card may have recognized structural features
 while its text or role remains unclassified. Empty text is reported explicitly.
