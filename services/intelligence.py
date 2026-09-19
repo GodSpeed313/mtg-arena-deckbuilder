@@ -15,6 +15,7 @@ from services.dependencies import (
     InteractionFamily,
     dependency_findings,
 )
+from services.needs import NEEDS_MODEL_VERSION, needs_findings
 from services.packages import (
     FUNCTIONAL_PACKAGES, PACKAGE_MODEL_VERSION, functional_package_contributions,
 )
@@ -552,25 +553,47 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
             ),
             "weighting": "card_copy_times_ability",
         }
-        zones[zone_name] = dict(total_count=sum(zone.values()), resolved_count=sum(quantities.values()),
+        total_count = sum(zone.values())
+        resolved_count = sum(quantities.values())
+        zone_coverage = "partial" if diagnostics else "resolved"
+        dependencies = dependency_findings(rows)
+        evidence_boundary = {
+            "claim_scope": "reviewed_features_only",
+            "zone_resolution": zone_coverage,
+            "unresolved_printing_copies": total_count - resolved_count,
+            "unclassified_card_copies": sum(
+                row["quantity"] for row in rows if row["status"] == "unclassified"
+            ),
+            "partially_classified_card_copies": sum(
+                row["quantity"] for row in rows if row["status"] == "partial"
+            ),
+            "unsupported_text_card_copies": sum(
+                row["quantity"] for row in rows if row["unsupported_text"]
+            ),
+            "rules_text_coverage": rules_text_coverage,
+        }
+        zones[zone_name] = dict(total_count=total_count, resolved_count=resolved_count,
                                 land_count=lands, nonland_mana_curve={str(k): curve[k] for k in sorted(curve)},
                                 role_counts={k: roles[k] for k in ROLES}, theme_counts={k: themes[k] for k in THEMES},
                                 functional_package_counts={
                                     package.label: package_counts[package.label]
                                     for package in FUNCTIONAL_PACKAGES
                                 },
-                                dependencies=dependency_findings(rows),
+                                dependencies=dependencies,
+                                needs=needs_findings(dependencies, evidence_boundary),
                                 cards=rows, diagnostics=diagnostics,
                                 rules_text_coverage=rules_text_coverage,
-                                coverage="partial" if diagnostics else "resolved")
+                                coverage=zone_coverage)
     return dict(analysis_version=VERSION,
                 functional_package_model_version=PACKAGE_MODEL_VERSION,
                 dependency_model_version=DEPENDENCY_MODEL_VERSION,
+                needs_model_version=NEEDS_MODEL_VERSION,
                 legality="not_evaluated", zones=zones,
                 interactions=interactions(zones["main"]["cards"]),
                 limitations=["Only reviewed decomposed ability shapes are interpreted; other text remains unsupported.",
                              "Counts describe recognized features, not deck quality or complete role coverage.",
                              "Functional packages describe evidenced card jobs, not deck needs, archetypes, or recommendations.",
                              "Dependency findings describe zone-local structural support, not sufficiency, quality, or recommendations.",
+                             "Needs identify missing reviewed dependency counterparts; they do not prove unsupported text lacks support or prescribe changes.",
                              "Curve uses canonical mana value, not alternative costs or mana-source probabilities.",
                              "Interactions are conditional possibilities, not combo or legality proofs."])

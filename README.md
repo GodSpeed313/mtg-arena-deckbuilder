@@ -410,6 +410,32 @@ not establish deck quality, package sufficiency, optimal ratios, archetype
 correctness, or recommended changes. No scores, thresholds, candidate selection,
 ownership filtering, or new rules-text interpretation are part of this model.
 
+### Deterministic deck needs (Pass #5C)
+
+Deck analysis includes needs model Version 1. It consumes the existing zone-local
+dependency findings without rebuilding relationships or parsing rules text. A
+`payoff_without_enabler` dependency produces a `support_need`: the reviewed payoff
+or consumer has no reviewed matching enabler in that zone. An
+`enabler_without_payoff` dependency produces an `unused_support_opportunity`, a
+neutral observation that does not imply the deck needs a payoff. Supported
+dependencies produce no needs finding.
+
+Each finding retains the source dependency identity and state, the existing and
+missing sides, participating cards and quantities, exact qualifying feature
+evidence, and an evidence boundary with zone resolution and rules-text coverage.
+Main, sideboard, and commander remain independent. Imperfect coverage does not
+suppress a deterministic finding and unsupported text is never guessed into a
+relationship.
+
+A support need means that a reviewed payoff or consumer lacks its reviewed
+dependency counterpart in the analyzed zone. It does not prove that unsupported
+card text cannot provide that support, and it does not identify which card should
+be added. An enabler without a payoff is reported only as an opportunity
+observation; it is not treated as evidence that the deck needs a payoff.
+
+Version 1 adds no quantity-sufficiency or ratio analysis, generic package-count
+heuristics, scores, candidate search, comparisons, or recommendations.
+
 Unrecognized wording, modal/conditional contexts outside the rules, and anomalous
 canonical text are unsupported. A card may have recognized structural features
 while its text or role remains unclassified. Empty text is reported explicitly.
