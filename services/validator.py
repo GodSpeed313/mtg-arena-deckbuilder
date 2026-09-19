@@ -89,10 +89,13 @@ def _is_basic_land(row: sqlite3.Row) -> bool:
     return row["name"] in _BASIC_LAND_NAMES
 
 
-def _copy_limit(row: sqlite3.Row, default: int) -> int | None:
-    if _is_basic_land(row):
+def card_copy_limit(
+    name: str, rules_text: str, default: int = 4,
+) -> int | None:
+    """Return the existing deterministic per-title copy limit."""
+    if name in _BASIC_LAND_NAMES:
         return None
-    text = row["rules_text"] or ""
+    text = rules_text or ""
     if re.search(r"deck can have any number of cards named", text, re.I):
         return None
     match = re.search(r"deck can have up to (\w+) cards named", text, re.I)
@@ -103,6 +106,10 @@ def _copy_limit(row: sqlite3.Row, default: int) -> int | None:
         if token in _NUMBER_WORDS:
             return _NUMBER_WORDS[token]
     return default
+
+
+def _copy_limit(row: sqlite3.Row, default: int) -> int | None:
+    return card_copy_limit(row["name"], row["rules_text"] or "", default)
 
 
 def validate_deck(

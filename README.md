@@ -436,6 +436,59 @@ observation; it is not treated as evidence that the deck needs a payoff.
 Version 1 adds no quantity-sufficiency or ratio analysis, generic package-count
 heuristics, scores, candidate search, comparisons, or recommendations.
 
+### Deterministic candidate pool (Pass #5D)
+
+Candidate model Version 1 is an explicit, read-only service layered after deck
+analysis. Call `services.candidates.discover_candidates(analysis, deck, con, ...)`
+with an analysis containing Version 1 needs and the canonical database connection.
+Database-wide discovery is not run by ordinary `analyze-deck`, so its cost is paid
+only when candidate retrieval is requested.
+
+Only `support_need` findings trigger discovery. An
+`unused_support_opportunity` never starts a search, and unknown finding types fail
+closed. The service takes the exact feature rule IDs and relationship from the
+need's missing side, classifies each canonical card through the existing reviewed
+classifier, and includes matches only when that exact classified evidence is
+present. It does not parse or search rules text as semantic proof. Per-need pools
+retain the source need and dependency, missing-side contract, and exact matching
+feature evidence; the same canonical card may consequently appear in multiple
+pools with separate provenance.
+
+Candidates use canonical title identity and are ordered by normalized card name,
+then title ID. Multiple printings do not create duplicate strategic candidates;
+known printing IDs and the printing IDs eligible for an established format remain
+visible as evidence. This ordering is neutral and is not a ranking. When an
+explicit format is supplied, the existing format query and format rules establish
+legal or illegal titles. With no format context, format eligibility remains
+unknown and no candidate is described as format-legal. An explicit
+`allowed_colors` context applies the existing color-identity subset rule; otherwise
+color identity is marked not applicable rather than inferred from the deck.
+
+Current quantities are counted across all deck zones. Cards already at their
+existing deterministic title or format copy cap are excluded, while being below a
+cap says nothing about how many copies should be added. Deck-size transactions are
+not modeled. A commander-zone need also respects an established format's commander
+allowlist, but the service never infers a commander or its color identity.
+
+Ownership is `unknown` unless an explicit collection mapping is supplied. Known
+zero ownership remains distinct from unknown ownership, and neither ownership
+state filters the general pool. Saved decks are not treated as collection proof.
+Wildcard and crafting eligibility are not evaluated. Missing format or printing
+facts remain explicit unresolved eligibility dimensions; unknown is never reported
+as a positive fact or silently treated as failure.
+
+Candidate discovery is deterministic retrieval, not strategic selection. A
+candidate is included because reviewed evidence matches a missing dependency
+feature and applicable deterministic eligibility checks permit it. Candidate
+presence does not mean the card is a good addition or should replace an existing
+card. The model adds no score, tier, comparison, recommendation, replacement, or
+deck mutation.
+
+Cards whose relevant rules text is unsupported by the reviewed classifier may be
+absent from the candidate pool even if a human Magic player would recognize them
+as useful. The output therefore describes reviewed matches, not every possible
+card that could support a need.
+
 Unrecognized wording, modal/conditional contexts outside the rules, and anomalous
 canonical text are unsupported. A card may have recognized structural features
 while its text or role remains unclassified. Empty text is reported explicitly.
