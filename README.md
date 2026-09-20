@@ -489,6 +489,48 @@ absent from the candidate pool even if a human Magic player would recognize them
 as useful. The output therefore describes reviewed matches, not every possible
 card that could support a need.
 
+### Deterministic candidate facts (Pass #5E)
+
+Candidate Facts Model Version 1 is the final deterministic evidence-aggregation
+layer before future strategic judgment. Call
+`services.candidate_facts.derive_candidate_facts(candidate_pools, con)` with Pass
+#5D Version 1 output and the canonical database connection. It does not run during
+ordinary `analyze-deck`, rediscover needs or candidates, or change eligibility.
+
+The service classifies only the unique titles actually returned by #5D, rather
+than reclassifying the full database. For every returned candidate it exposes
+canonical title identity, mana cost and mana value, types and subtypes, colors and
+color identity, power and toughness, and the printing-specific set, collector
+number, and rarity facts already carried by #5D. Missing canonical values retain
+their existing empty/null representation; no metadata parser is added.
+
+Each per-need record preserves the analyzed zone, source need and dependency,
+missing-side feature requirements, exact matching classifier evidence, complete
+reviewed feature set, and every functional-package contribution with its exact
+#5A evidence. Eligibility status, format and eligible-printing facts, explicit
+color context, copy limit and current-deck quantity, ownership, crafting state,
+and unresolved dimensions are copied from #5D without recalculation or semantic
+change. Unknown ownership remains unknown, known zero remains known zero, and
+crafting remains not evaluated when that is what #5D established.
+
+A neutral canonical-title index also lists every matched need and dependency for
+titles returned under multiple pools while retaining separate per-need evidence.
+Duplicate printings never create duplicate title records. Source pool summaries,
+including candidate limits and truncation, are preserved. Titles are ordered by
+case-folded name and title ID; need and dependency IDs use stable lexical order.
+Contradictory duplicate facts, malformed entries, unsupported trigger semantics,
+and incompatible model versions fail clearly instead of being guessed into shape.
+
+Candidate facts describe what is deterministically known about a candidate. They
+do not assign strategic value to those facts. A candidate matching multiple needs
+or contributing to multiple functional packages is not automatically better than
+a candidate matching fewer. Strategic evaluation belongs to a later layer.
+
+Version 1 adds no scoring, ranking, comparison, recommendation, replacement, deck
+mutation, candidate rediscovery, eligibility reinterpretation, ownership or
+crafting inference, diagnosis change, or new rules-text interpretation. Unsupported
+capabilities remain absent even when a human player would recognize them.
+
 Unrecognized wording, modal/conditional contexts outside the rules, and anomalous
 canonical text are unsupported. A card may have recognized structural features
 while its text or role remains unclassified. Empty text is reported explicitly.
