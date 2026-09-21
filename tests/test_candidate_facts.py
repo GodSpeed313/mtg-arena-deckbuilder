@@ -114,17 +114,17 @@ class CandidateFactsTests(unittest.TestCase):
         _, pools = self.candidates()
         first = derive_candidate_facts(pools, self.con)
         second = derive_candidate_facts(pools, self.con)
-        self.assertEqual(CANDIDATE_FACTS_MODEL_VERSION, "1")
+        self.assertEqual(CANDIDATE_FACTS_MODEL_VERSION, "2")
         self.assertEqual(first, second)
-        self.assertEqual(first["candidate_facts_model_version"], "1")
-        self.assertEqual(first["source_candidate_model_version"], "1")
+        self.assertEqual(first["candidate_facts_model_version"], "2")
+        self.assertEqual(first["source_candidate_model_version"], "2")
         self.assertEqual(first["functional_package_model_version"], "1")
         self.assertEqual(
             first["candidate_title_count"], len(first["candidate_facts_by_title"])
         )
 
         wrong = deepcopy(pools)
-        wrong["candidate_model_version"] = "2"
+        wrong["candidate_model_version"] = "1"
         with self.assertRaises(ValueError):
             derive_candidate_facts(wrong, self.con)
 
@@ -190,23 +190,21 @@ class CandidateFactsTests(unittest.TestCase):
             [("effect.lifegain.v1", "producer")],
         )
 
-    def test_multi_need_overlap_aggregates_title_and_keeps_per_need_records(self):
+    def test_optional_support_does_not_create_candidate_fact_occurrence(self):
         _, pools = self.candidates()
         result = derive_candidate_facts(pools, self.con)
         token = self.title(result, 5)
         self.assertEqual(token["matched_need_ids"], [
-            "need.creature_token_entry.enabler.v1",
-            "need.creature_token_sacrifice.enabler.v1",
+            "need.creature_token_entry.enabler.v2",
         ])
         self.assertEqual(token["matched_dependency_ids"], [
-            "dependency.creature_token_entry.v1",
-            "dependency.creature_token_sacrifice.v1",
+            "dependency.creature_token_entry.v2",
         ])
-        self.assertEqual(len(token["per_need_matches"]), 2)
+        self.assertEqual(len(token["per_need_matches"]), 1)
         self.assertEqual(
             {match["source_need"]["dependency_label"]
              for match in token["per_need_matches"]},
-            {"creature_token_entry", "creature_token_sacrifice"},
+            {"creature_token_entry"},
         )
         self.assertTrue(all(
             {feature["rule_id"] for feature in match["matching_feature_evidence"]}
@@ -359,17 +357,17 @@ class CandidateFactsTests(unittest.TestCase):
         self.assertEqual(deck, deck_before)
         self.assertEqual(tuple(self.con.iterdump()), database_before)
         self.assertEqual(diagnose_analysis(analysis), diagnosis_before)
-        self.assertEqual(analysis["needs_model_version"], "1")
-        self.assertEqual(analysis["dependency_model_version"], "1")
+        self.assertEqual(analysis["needs_model_version"], "2")
+        self.assertEqual(analysis["dependency_model_version"], "2")
         self.assertEqual(analysis["functional_package_model_version"], "1")
 
     def test_contradictory_duplicate_candidate_facts_fail_closed(self):
-        _, pools = self.candidates()
+        _, pools = self.candidates(Deck(main={101: 1, 801: 1}))
         token_occurrences = [
             candidate
             for pool in pools["pools"]
             for candidate in pool["candidates"]
-            if candidate["title_id"] == 5
+            if candidate["title_id"] == 2
         ]
         self.assertEqual(len(token_occurrences), 2)
         token_occurrences[1]["eligibility"]["ownership"] = {

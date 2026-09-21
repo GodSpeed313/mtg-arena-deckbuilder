@@ -88,9 +88,9 @@ class CandidatePoolTests(unittest.TestCase):
         second = discover_candidates(
             self.analysis_for(deck), deck, self.con, format_name="Test",
         )
-        self.assertEqual(CANDIDATE_MODEL_VERSION, "1")
+        self.assertEqual(CANDIDATE_MODEL_VERSION, "2")
         self.assertEqual(first, second)
-        self.assertEqual(first["candidate_model_version"], "1")
+        self.assertEqual(first["candidate_model_version"], "2")
         self.assertEqual(first["trigger_finding_type"], "support_need")
         self.assertEqual(first["ordering"], "casefolded_card_name_then_title_id_non_ranking")
         names = [card["name"] for card in self.pool(first, "lifegain")["candidates"]]
@@ -180,29 +180,17 @@ class CandidatePoolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             discover_candidates(changed, deck, self.con, format_name="Test")
 
-    def test_duplicate_requirements_reuse_consistent_matching_with_provenance(self):
+    def test_optional_sacrifice_support_does_not_trigger_candidate_discovery(self):
         deck = Deck(main={701: 2, 1001: 2, 1501: 56})
         result = discover_candidates(
             self.analysis_for(deck), deck, self.con, format_name="Test",
         )
-        entry = self.pool(result, "creature_token_entry")
-        sacrifice = self.pool(result, "creature_token_sacrifice")
-        self.assertEqual(
-            {card["title_id"] for card in entry["candidates"]},
-            {card["title_id"] for card in sacrifice["candidates"]},
-        )
-        gamma_entry = next(card for card in entry["candidates"] if card["title_id"] == 8)
-        gamma_sacrifice = next(
-            card for card in sacrifice["candidates"] if card["title_id"] == 8
-        )
-        self.assertNotEqual(
-            gamma_entry["source_need"]["finding_id"],
-            gamma_sacrifice["source_need"]["finding_id"],
-        )
-        self.assertEqual(
-            gamma_entry["matching_feature_evidence"],
-            gamma_sacrifice["matching_feature_evidence"],
-        )
+        self.pool(result, "creature_token_entry")
+        self.assertFalse(any(
+            pool["source_need"]["dependency_label"] == "creature_token_sacrifice"
+            for pool in result["pools"]
+        ))
+        self.assertGreaterEqual(result["ignored_non_trigger_findings"], 1)
 
     def test_format_unknown_legal_and_illegal_states_are_conservative(self):
         deck = Deck(main={101: 2, 1501: 58})
@@ -274,8 +262,8 @@ class CandidatePoolTests(unittest.TestCase):
         self.assertEqual(deck, deck_before)
         self.assertEqual(tuple(self.con.iterdump()), database_before)
         self.assertEqual(diagnose_analysis(analysis), diagnosis_before)
-        self.assertEqual(analysis["needs_model_version"], "1")
-        self.assertEqual(analysis["dependency_model_version"], "1")
+        self.assertEqual(analysis["needs_model_version"], "2")
+        self.assertEqual(analysis["dependency_model_version"], "2")
         self.assertEqual(analysis["functional_package_model_version"], "1")
         self.assertEqual(
             {row["rule_id"] for row in analysis["interactions"]},

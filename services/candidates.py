@@ -17,7 +17,7 @@ from services.intelligence import classify_card
 from services.validator import card_copy_limit
 
 
-CANDIDATE_MODEL_VERSION = "1"
+CANDIDATE_MODEL_VERSION = "2"
 
 
 def _output(
@@ -91,7 +91,11 @@ def _source_needs(analysis: dict) -> tuple[list[dict], int]:
     for zone_name in ("main", "sideboard", "commander"):
         for finding in (zones.get(zone_name) or {}).get("needs", []):
             finding_type = finding.get("finding_type")
-            if finding_type == "unused_support_opportunity":
+            if finding_type in {
+                "unused_support_opportunity",
+                "optional_support_observation",
+                "conditional_support_observation",
+            }:
                 ignored += 1
                 continue
             if finding_type != "support_need":
@@ -99,10 +103,21 @@ def _source_needs(analysis: dict) -> tuple[list[dict], int]:
             if finding.get("missing_side_name") != "enabler":
                 raise ValueError("support need must identify a missing enabler side")
             missing = finding.get("missing_side") or {}
-            rule_ids = tuple(missing.get("feature_rule_ids") or ())
+            raw_rule_ids = missing.get("acceptable_feature_rule_ids")
+            matching_semantics = missing.get("matching_semantics")
             relationship = missing.get("relationship")
-            if not rule_ids or not relationship:
+            if (
+                not isinstance(raw_rule_ids, list)
+                or not raw_rule_ids
+                or any(not isinstance(rule_id, str) or not rule_id for rule_id in raw_rule_ids)
+                or len(set(raw_rule_ids)) != len(raw_rule_ids)
+                or missing.get("feature_rule_ids") != raw_rule_ids
+                or matching_semantics != "any"
+                or not isinstance(relationship, str)
+                or not relationship
+            ):
                 raise ValueError("support need is missing reviewed feature requirements")
+            rule_ids = tuple(raw_rule_ids)
             sources.append({
                 "zone": zone_name,
                 "finding_id": finding["finding_id"],
@@ -111,6 +126,7 @@ def _source_needs(analysis: dict) -> tuple[list[dict], int]:
                 "missing_side_name": "enabler",
                 "missing_side": deepcopy(missing),
                 "required_feature_rule_ids": list(rule_ids),
+                "feature_matching_semantics": "any",
                 "required_relationship": relationship,
             })
     return sources, ignored
@@ -127,8 +143,8 @@ def discover_candidates(
     limit_per_need: int | None = None,
 ) -> dict:
     """Return neutral per-need candidate pools without mutating inputs or data."""
-    if analysis.get("needs_model_version") != "1":
-        raise ValueError("candidate discovery requires needs model version 1")
+    if analysis.get("needs_model_version") != "2":
+        raise ValueError("candidate discovery requires needs model version 2")
     if limit_per_need is not None and (
         type(limit_per_need) is not int or limit_per_need <= 0
     ):
@@ -282,6 +298,7 @@ def discover_candidates(
                     "required_feature": {
                         "status": "matched",
                         "feature_rule_ids": source["required_feature_rule_ids"],
+                        "matching_semantics": source["feature_matching_semantics"],
                         "relationship": relationship,
                     },
                     "format_legality": format_fact,

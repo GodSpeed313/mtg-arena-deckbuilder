@@ -755,7 +755,7 @@ class AnalysisTests(unittest.TestCase):
 
     def test_analysis_v2_includes_abilities_and_copy_weighted_coverage(self):
         result = analyze_deck(Deck(main={101: 2, 301: 4}), self.con)
-        self.assertEqual(result["analysis_version"], "2")
+        self.assertEqual(result["analysis_version"], "3")
         cards = result["zones"]["main"]["cards"]
         self.assertTrue(all("abilities" in row and "ability_coverage" in row for row in cards))
         coverage = result["zones"]["main"]["rules_text_coverage"]

@@ -15,7 +15,7 @@ from services.intelligence import classify_card
 from services.packages import PACKAGE_MODEL_VERSION
 
 
-CANDIDATE_FACTS_MODEL_VERSION = "1"
+CANDIDATE_FACTS_MODEL_VERSION = "2"
 
 _ELIGIBILITY_STATUSES = frozenset({"eligible", "eligibility_unknown"})
 
@@ -36,6 +36,7 @@ def _source_need(value) -> dict:
         "missing_side_name",
         "missing_side",
         "required_feature_rule_ids",
+        "feature_matching_semantics",
         "required_relationship",
     )
     if any(key not in source for key in required):
@@ -49,13 +50,17 @@ def _source_need(value) -> dict:
         not isinstance(rule_ids, list)
         or not rule_ids
         or any(not isinstance(rule_id, str) or not rule_id for rule_id in rule_ids)
+        or len(set(rule_ids)) != len(rule_ids)
         or not isinstance(source["required_relationship"], str)
         or not source["required_relationship"]
+        or source["feature_matching_semantics"] != "any"
     ):
         raise ValueError("source need has malformed feature requirements")
     missing = _require_mapping(source["missing_side"], "missing side")
     if (
-        missing.get("feature_rule_ids") != source["required_feature_rule_ids"]
+        missing.get("acceptable_feature_rule_ids") != source["required_feature_rule_ids"]
+        or missing.get("feature_rule_ids") != source["required_feature_rule_ids"]
+        or missing.get("matching_semantics") != source["feature_matching_semantics"]
         or missing.get("relationship") != source["required_relationship"]
     ):
         raise ValueError("source need feature requirements are contradictory")
@@ -138,6 +143,8 @@ def _validate_candidate(
         required_feature.get("status") != "matched"
         or required_feature.get("feature_rule_ids")
         != source["required_feature_rule_ids"]
+        or required_feature.get("matching_semantics")
+        != source["feature_matching_semantics"]
         or required_feature.get("relationship") != source["required_relationship"]
     ):
         raise ValueError("candidate eligibility contradicts source requirements")
@@ -164,10 +171,10 @@ def _validate_candidate(
 def derive_candidate_facts(
     candidate_pools: dict, con: sqlite3.Connection,
 ) -> dict:
-    """Enrich returned Version 1 candidates without rediscovery or mutation."""
+    """Enrich returned Version 2 candidates without rediscovery or mutation."""
     source_output = _require_mapping(candidate_pools, "candidate pool")
     if source_output.get("candidate_model_version") != CANDIDATE_MODEL_VERSION:
-        raise ValueError("candidate facts require candidate model version 1")
+        raise ValueError("candidate facts require candidate model version 2")
     if any(key not in source_output for key in (
         "trigger_finding_type",
         "format_context",
@@ -178,7 +185,7 @@ def derive_candidate_facts(
         "ordering",
         "limitations",
     )):
-        raise ValueError("candidate pool is missing Version 1 context")
+        raise ValueError("candidate pool is missing Version 2 context")
     if source_output.get("trigger_finding_type") != "support_need":
         raise ValueError("unsupported candidate-pool trigger semantics")
     pools = source_output.get("pools")

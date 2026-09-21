@@ -22,14 +22,15 @@ STRATEGIC_RELATIONSHIPS = frozenset({"producer", "enabler", "consumer", "payoff"
 
 
 def normalize_analysis(analysis: dict) -> dict:
-    """Return the flat-feature view shared by analysis Versions 1 and 2.
+    """Return the flat-feature view shared by analysis Versions 1 through 3.
 
-    Version 2 adds ability records and coverage fields while retaining the
-    Version 1 zones, flat features and interaction rows.  Diagnosis consumes
-    only that compatibility surface and does not reinterpret ability text.
+    Version 2 adds ability records and coverage fields; Version 3 adds
+    compatibility-aware dependency and needs records. Both retain the Version 1
+    zones, flat features and interaction rows. Diagnosis consumes only that
+    compatibility surface and does not reinterpret ability text.
     """
     version = analysis.get("analysis_version")
-    if version not in {"1", "2"}:
+    if version not in {"1", "2", "3"}:
         raise ValueError("unsupported deck analysis version")
     return {
         "analysis_version": "1",

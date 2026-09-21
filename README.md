@@ -288,7 +288,7 @@ not read the live log or retain real account/deck/request identifiers or names.
 python workbench.py analyze-deck examples/sample_deck.txt
 ```
 
-This read-only command returns analysis Version 2 JSON with separate main, sideboard and
+This read-only command returns analysis Version 3 JSON with separate main, sideboard and
 commander reports: land count, quantity-weighted nonland mana curve, card features,
 role/theme copy counts, decomposed abilities, rules-text coverage, unsupported text
 and main-deck interactions. Import errors
@@ -325,7 +325,8 @@ conditions, qualifiers and unsupported remainders. Reviewed creature-token forms
 retain explicit quantity, power/toughness, color, creature type, artifact status,
 and a bounded list of explicit token keywords. Treasure, Clue, Food, Blood, and
 Map production is represented separately as named noncreature-token production;
-no use, payoff, or creature-token interaction is inferred from it. Exact whole-line
+it can satisfy a reviewed any-token-entry listener but never a creature-token-only
+listener. No token use beyond these reviewed contracts is inferred. Exact whole-line
 intrinsic flying, vigilance, trample, deathtouch, lifelink, haste, reach, menace,
 defender, first strike, double strike, hexproof, and indestructible are recognized,
 as is Ward with a braced mana cost. Granted, conditional, reminder-text, and other
@@ -381,29 +382,43 @@ not evaluated; no stateful
 board evaluation, synergy score, or recommendation is produced. This is not a
 general Magic rules engine.
 
-Only three interactions are recognized: the supported creature-token producer
-with the token-entry draw payoff; that producer with the reusable sacrifice/draw
+Only three interaction families are recognized: a compatible reviewed token producer
+with the token-entry draw payoff; a creature-token producer with the reusable sacrifice/draw
 outlet; and an instant/sorcery with the supported spell-cast draw payoff. Every
 interaction includes both classified features and states its prerequisites.
 Shared themes alone never produce interactions. There is no numeric synergy score.
 
 ### Deterministic dependency support (Pass #5B)
 
-Deck analysis includes dependency model Version 1. It derives zone-local support
-facts only from stable reviewed feature IDs and their existing relationship values;
-it does not parse rules text again. The exact families are lifegain producer to
-lifegain payoff, +1/+1 counter producer to counter payoff, creature-token producer
-to token-entry payoff, creature-token producer to sacrifice consumer, and
+Deck analysis includes dependency model Version 2. It derives zone-local support
+facts from stable reviewed feature IDs, relationship values, and structured ability
+context; it does not parse rules text again. The exact families are lifegain producer to
+lifegain payoff, +1/+1 counter producer to counter payoff, compatible reviewed
+token producer to token-entry payoff, creature-token producer to sacrifice consumer, and
 instant/sorcery enabler to spell-cast payoff. The last three reuse the same exact
 feature-side definitions as the existing interaction registry.
 
-An active family is `supported`, `payoff_without_enabler`, or
+Strict families distinguish `supported`, `conditionally_supported`,
+`payoff_without_enabler`, `payoff_without_compatible_enabler`, and
 `enabler_without_payoff`; families with neither side are omitted. Main, sideboard,
 and commander are calculated independently. Each side retains card identity, name,
 quantity, qualifying feature IDs, and exact feature evidence. Copy totals count a
-card once per side even if it has multiple qualifying feature rows. Lifelink is not
-a lifegain producer, named noncreature tokens are not creature-token producers, and
-unsupported text creates no dependency evidence.
+card once per side even if it has multiple qualifying feature rows. Dependency-relevant
+evidence also retains structured triggers, costs, conditions, qualifiers, effect targets,
+parse status, and unsupported remainder. A producer governed by a reviewed prerequisite
+is conditional rather than silently equivalent to unconditional support.
+
+Counter support is established only when the reviewed producer target can satisfy the
+reviewed listener subject. Creature-token-only listeners accept only creature-token
+production, while any-token listeners accept reviewed creature or named noncreature
+token production. Missing-side alternatives use explicit `matching_semantics: any`.
+Lifelink is not a lifegain producer and unsupported text creates no positive evidence.
+
+Each dependency declares `strict` or `optional_support` policy. Creature-token
+production remains a valid support/interaction route for a generic creature-sacrifice
+outlet, but it is optional because ordinary creatures can also pay that cost. Its absence
+is `optional_support_absent`, never a strict token-production need. No fodder count,
+frequency, ratio, or other sufficiency heuristic is evaluated.
 
 Dependency findings describe structural support among reviewed features. They do
 not establish deck quality, package sufficiency, optimal ratios, archetype
@@ -412,13 +427,15 @@ ownership filtering, or new rules-text interpretation are part of this model.
 
 ### Deterministic deck needs (Pass #5C)
 
-Deck analysis includes needs model Version 1. It consumes the existing zone-local
+Deck analysis includes needs model Version 2. It consumes the existing zone-local
 dependency findings without rebuilding relationships or parsing rules text. A
 `payoff_without_enabler` dependency produces a `support_need`: the reviewed payoff
 or consumer has no reviewed matching enabler in that zone. An
 `enabler_without_payoff` dependency produces an `unused_support_opportunity`, a
 neutral observation that does not imply the deck needs a payoff. Supported
-dependencies produce no needs finding.
+dependencies produce no needs finding. Conditional support produces a neutral
+`conditional_support_observation`, and absent optional support produces an
+`optional_support_observation`; neither is a strict need.
 
 Each finding retains the source dependency identity and state, the existing and
 missing sides, participating cards and quantities, exact qualifying feature
@@ -433,23 +450,26 @@ card text cannot provide that support, and it does not identify which card shoul
 be added. An enabler without a payoff is reported only as an opportunity
 observation; it is not treated as evidence that the deck needs a payoff.
 
-Version 1 adds no quantity-sufficiency or ratio analysis, generic package-count
+Version 2 adds no quantity-sufficiency or ratio analysis, generic package-count
 heuristics, scores, candidate search, comparisons, or recommendations.
 
 ### Deterministic candidate pool (Pass #5D)
 
-Candidate model Version 1 is an explicit, read-only service layered after deck
+Candidate model Version 2 is an explicit, read-only service layered after deck
 analysis. Call `services.candidates.discover_candidates(analysis, deck, con, ...)`
-with an analysis containing Version 1 needs and the canonical database connection.
+with an analysis containing Version 2 needs and the canonical database connection.
 Database-wide discovery is not run by ordinary `analyze-deck`, so its cost is paid
 only when candidate retrieval is requested.
 
 Only `support_need` findings trigger discovery. An
-`unused_support_opportunity` never starts a search, and unknown finding types fail
+`unused_support_opportunity`, optional-support observations, and conditional-support
+observations never start a search, and unknown finding types fail
 closed. The service takes the exact feature rule IDs and relationship from the
 need's missing side, classifies each canonical card through the existing reviewed
 classifier, and includes matches only when that exact classified evidence is
-present. It does not parse or search rules text as semantic proof. Per-need pools
+present. Explicit `any` matching allows any one reviewed alternative to satisfy a
+missing-side contract; alternatives are not treated as conjunctive. It does not
+parse or search rules text as semantic proof. Per-need pools
 retain the source need and dependency, missing-side contract, and exact matching
 feature evidence; the same canonical card may consequently appear in multiple
 pools with separate provenance.
@@ -491,10 +511,10 @@ card that could support a need.
 
 ### Deterministic candidate facts (Pass #5E)
 
-Candidate Facts Model Version 1 is the final deterministic evidence-aggregation
+Candidate Facts Model Version 2 is the final deterministic evidence-aggregation
 layer before future strategic judgment. Call
 `services.candidate_facts.derive_candidate_facts(candidate_pools, con)` with Pass
-#5D Version 1 output and the canonical database connection. It does not run during
+#5D Version 2 output and the canonical database connection. It does not run during
 ordinary `analyze-deck`, rediscover needs or candidates, or change eligibility.
 
 The service classifies only the unique titles actually returned by #5D, rather
@@ -526,7 +546,7 @@ do not assign strategic value to those facts. A candidate matching multiple need
 or contributing to multiple functional packages is not automatically better than
 a candidate matching fewer. Strategic evaluation belongs to a later layer.
 
-Version 1 adds no scoring, ranking, comparison, recommendation, replacement, deck
+Version 2 adds no scoring, ranking, comparison, recommendation, replacement, deck
 mutation, candidate rediscovery, eligibility reinterpretation, ownership or
 crafting inference, diagnosis change, or new rules-text interpretation. Unsupported
 capabilities remain absent even when a human player would recognize them.
@@ -549,7 +569,7 @@ python -m unittest tests.test_intelligence -v
 python workbench.py diagnose-deck examples/sample_deck.txt
 ```
 
-Diagnosis normalizes Version 1 and Version 2 analysis through their shared flat
+Diagnosis normalizes Versions 1, 2, and 3 analysis through their shared flat
 feature and interaction contract. It does not parse card text,
 validate legality, query ownership, or recommend changes. Output separates facts,
 interpretations, warnings, and unknowns. Only the existing token-value,

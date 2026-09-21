@@ -68,6 +68,8 @@ def side(rule_id: str, relationship: str, quantity: int, title_id: int) -> dict:
     }]
     return {
         "relationship": relationship,
+        "acceptable_feature_rule_ids": [rule_id],
+        "matching_semantics": "any",
         "feature_rule_ids": [rule_id],
         "copy_count": quantity,
         "cards": cards,
@@ -78,11 +80,12 @@ def dependency(label: str, state: str, *, quantity: int = 2) -> dict:
     enabler_rule, enabler_relationship, payoff_rule, payoff_relationship = (
         DEPENDENCY_RULES[label]
     )
-    has_enabler = state in {"supported", "enabler_without_payoff"}
-    has_payoff = state in {"supported", "payoff_without_enabler"}
+    has_enabler = state in {"supported", "conditionally_supported", "enabler_without_payoff"}
+    has_payoff = state in {"supported", "conditionally_supported", "payoff_without_enabler", "optional_support_absent"}
     return {
         "dependency_id": f"dependency.{label}.v1",
         "label": label,
+        "policy": "optional_support" if label == "creature_token_sacrifice" else "strict",
         "state": state,
         "explanation": "Synthetic dependency fixture.",
         "enabler_side": side(
@@ -96,7 +99,7 @@ def dependency(label: str, state: str, *, quantity: int = 2) -> dict:
 
 class NeedsModelTests(unittest.TestCase):
     def test_version_and_stable_finding_ids(self):
-        self.assertEqual(NEEDS_MODEL_VERSION, "1")
+        self.assertEqual(NEEDS_MODEL_VERSION, "2")
         findings = needs_findings([
             dependency("lifegain", "payoff_without_enabler"),
             dependency("plus1_counters", "enabler_without_payoff"),
@@ -123,18 +126,19 @@ class NeedsModelTests(unittest.TestCase):
         self.assertIn("not a deck need", opportunity[0]["explanation"])
         self.assertEqual(supported, [])
 
-    def test_all_five_families_can_create_support_needs(self):
+    def test_four_strict_families_create_needs_and_optional_support_does_not(self):
         findings = needs_findings([
             dependency(label, "payoff_without_enabler")
-            for label in DEPENDENCY_RULES
+            for label in DEPENDENCY_RULES if label != "creature_token_sacrifice"
+        ] + [
+            dependency("creature_token_sacrifice", "optional_support_absent")
         ], boundary())
         self.assertEqual(
-            {item["dependency_label"] for item in findings},
-            set(DEPENDENCY_RULES),
+            {item["dependency_label"] for item in findings if item["finding_type"] == "support_need"},
+            set(DEPENDENCY_RULES) - {"creature_token_sacrifice"},
         )
-        self.assertTrue(all(
-            item["finding_type"] == "support_need" for item in findings
-        ))
+        sacrifice = next(item for item in findings if item["dependency_label"] == "creature_token_sacrifice")
+        self.assertEqual(sacrifice["finding_type"], "optional_support_observation")
 
     def test_spell_enabler_only_is_an_opportunity_not_a_need(self):
         result = needs_findings([
@@ -145,7 +149,7 @@ class NeedsModelTests(unittest.TestCase):
         self.assertNotEqual(result[0]["finding_type"], "support_need")
 
     def test_findings_preserve_dependency_evidence_counts_and_coverage(self):
-        source = dependency("creature_token_sacrifice", "payoff_without_enabler", quantity=4)
+        source = dependency("lifegain", "payoff_without_enabler", quantity=4)
         coverage = boundary(
             zone_resolution="partial",
             unresolved_printing_copies=2,
@@ -160,12 +164,12 @@ class NeedsModelTests(unittest.TestCase):
         self.assertEqual(result["existing_side"]["copy_count"], 4)
         self.assertEqual(
             result["existing_side"]["cards"][0]["evidence"][0]["rule_id"],
-            "cost.sacrifice_draw.v1",
+            "trigger.lifegain.v1",
         )
-        self.assertEqual(result["existing_side"]["relationship"], "consumer")
-        self.assertEqual(result["missing_side"]["feature_rule_ids"], ["effect.token.v1"])
+        self.assertEqual(result["existing_side"]["relationship"], "payoff")
+        self.assertEqual(result["missing_side"]["feature_rule_ids"], ["effect.lifegain.v1"])
         self.assertEqual(result["evidence_boundary"], coverage)
-        self.assertIn("no reviewed matching enabler", result["explanation"])
+        self.assertIn("no compatible reviewed matching enabler", result["explanation"])
 
     def test_output_has_no_future_layer_fields(self):
         result = needs_findings([
@@ -231,7 +235,10 @@ class NeedsAnalysisTests(unittest.TestCase):
         self.assertIn("lifegain", needs)
         self.assertIn("creature_token_entry", needs)
         self.assertEqual(needs["lifegain"]["missing_side"]["cards"], [])
-        self.assertEqual(needs["creature_token_entry"]["missing_side"]["cards"], [])
+        self.assertEqual(
+            needs["creature_token_entry"]["dependency_state"],
+            "payoff_without_compatible_enabler",
+        )
         evidence = needs["lifegain"]["evidence_boundary"]
         self.assertEqual(evidence["unclassified_card_copies"], 3)
         self.assertEqual(evidence["unsupported_text_card_copies"], 3)
@@ -286,9 +293,9 @@ class NeedsAnalysisTests(unittest.TestCase):
 
     def test_existing_outputs_and_diagnosis_remain_stable(self):
         result = analyze_deck(Deck(main={701: 4, 401: 2, 1101: 54}), self.con)
-        self.assertEqual(result["analysis_version"], "2")
-        self.assertEqual(result["needs_model_version"], "1")
-        self.assertEqual(result["dependency_model_version"], "1")
+        self.assertEqual(result["analysis_version"], "3")
+        self.assertEqual(result["needs_model_version"], "2")
+        self.assertEqual(result["dependency_model_version"], "2")
         self.assertEqual(result["functional_package_model_version"], "1")
         self.assertEqual(
             {item["rule_id"] for item in result["interactions"]},

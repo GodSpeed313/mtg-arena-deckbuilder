@@ -44,15 +44,15 @@ def finding(rows: list[dict], label: str) -> dict:
 
 class DependencyModelTests(unittest.TestCase):
     def test_registry_version_ids_and_shared_interaction_definitions_are_stable(self):
-        self.assertEqual(DEPENDENCY_MODEL_VERSION, "1")
+        self.assertEqual(DEPENDENCY_MODEL_VERSION, "2")
         self.assertIsInstance(DEPENDENCIES, tuple)
         self.assertEqual(
             [item.dependency_id for item in DEPENDENCIES],
             [
                 "dependency.lifegain.v1",
-                "dependency.plus1_counters.v1",
-                "dependency.creature_token_entry.v1",
-                "dependency.creature_token_sacrifice.v1",
+                "dependency.plus1_counters.v2",
+                "dependency.creature_token_entry.v2",
+                "dependency.creature_token_sacrifice.v2",
                 "dependency.spell_cast.v1",
             ],
         )
@@ -60,7 +60,8 @@ class DependencyModelTests(unittest.TestCase):
             len(DEPENDENCIES), len({item.dependency_id for item in DEPENDENCIES}),
         )
         self.assertTrue(all(
-            item.dependency_id.endswith(".v1")
+            item.dependency_id.rsplit(".v", 1)[-1] in {"1", "2"}
+            and item.policy in {"strict", "optional_support"}
             and item.enabler_rule_ids
             and item.payoff_rule_ids
             and item.explanation
@@ -68,15 +69,15 @@ class DependencyModelTests(unittest.TestCase):
         ))
         projected = {
             item.interaction_family_id: (
-                item.enabler_rule_ids[0], item.payoff_rule_ids[0]
+                item.enabler_rule_ids, item.payoff_rule_ids
             )
             for item in DEPENDENCIES if item.interaction_family_id
         }
         self.assertEqual(
             {
                 family.family_id: (
-                    family.source_feature_rule_id,
-                    family.beneficiary_feature_rule_id,
+                    family.source_feature_rule_ids,
+                    family.beneficiary_feature_rule_ids,
                 )
                 for family in INTERACTION_FAMILIES
             },
@@ -128,8 +129,8 @@ class DependencyModelTests(unittest.TestCase):
         ]
         token = finding(rows, "creature_token_entry")
         life = finding(rows, "lifegain")
-        self.assertEqual(token["state"], "payoff_without_enabler")
-        self.assertEqual(token["enabler_side"]["cards"], [])
+        self.assertEqual(token["state"], "payoff_without_compatible_enabler")
+        self.assertEqual(token["compatible_pairs"], [])
         self.assertEqual(life["state"], "payoff_without_enabler")
         self.assertEqual(life["enabler_side"]["cards"], [])
         self.assertFalse(any(card["title_id"] == 3 for item in dependency_findings(rows)
@@ -220,8 +221,8 @@ class DependencyAnalysisTests(unittest.TestCase):
             sideboard={301: 2},
             commander={401: 1},
         ), self.con)
-        self.assertEqual(result["analysis_version"], "2")
-        self.assertEqual(result["dependency_model_version"], "1")
+        self.assertEqual(result["analysis_version"], "3")
+        self.assertEqual(result["dependency_model_version"], "2")
         self.assertEqual(
             next(item for item in result["zones"]["main"]["dependencies"]
                  if item["label"] == "lifegain")["state"],

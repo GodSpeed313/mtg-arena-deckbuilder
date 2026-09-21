@@ -12,15 +12,15 @@ from services.abilities import Ability, decompose_abilities
 from services.dependencies import (
     DEPENDENCY_MODEL_VERSION,
     INTERACTION_FAMILIES,
-    InteractionFamily,
     dependency_findings,
+    interaction_findings,
 )
 from services.needs import NEEDS_MODEL_VERSION, needs_findings
 from services.packages import (
     FUNCTIONAL_PACKAGES, PACKAGE_MODEL_VERSION, functional_package_contributions,
 )
 
-VERSION = "2"
+VERSION = "3"
 ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
          "counterspell", "protection", "recursion", "threat")
 THEMES = ("tokens", "counters", "lifegain", "sacrifice", "graveyard", "typal", "spells",
@@ -118,15 +118,51 @@ def _project_ability_features(
     """Project reviewed ability semantics into the stable Pass #1 feature schema."""
     projected = []
 
-    def feature(rule_id, dimension, label, relationship, evidence, explanation):
-        projected.append(dict(
+    def context(ability, effect=None):
+        prerequisites = {
+            "trigger": asdict(ability.trigger) if ability.trigger else None,
+            "costs": [asdict(cost) for cost in ability.costs],
+            "conditions": [asdict(item) for item in (
+                effect.conditions if effect is not None else ()
+            )],
+            "qualifiers": [asdict(item) for item in (
+                *ability.qualifiers,
+                *(effect.qualifiers if effect is not None else ()),
+            )],
+        }
+        availability = (
+            "partially_reviewed"
+            if ability.unsupported_remainder
+            else "unconditional" if not any(prerequisites.values())
+            else "conditional"
+        )
+        return {
+            "ability_id": ability.ability_id,
+            "ability_kind": ability.kind,
+            "availability": availability,
+            "prerequisites": prerequisites,
+            "effect": asdict(effect) if effect is not None else None,
+            "parse_status": ability.parse_status,
+            "unsupported_remainder": [
+                asdict(item) for item in ability.unsupported_remainder
+            ],
+        }
+
+    def feature(
+        rule_id, dimension, label, relationship, evidence, explanation,
+        dependency_context=None,
+    ):
+        item = dict(
             rule_id=rule_id,
             dimension=dimension,
             label=label,
             relationship=relationship,
             evidence=evidence,
             explanation=explanation,
-        ))
+        )
+        if dependency_context is not None:
+            item["dependency_context"] = dependency_context
+        projected.append(item)
 
     for ability in abilities:
         if ability.parse_status not in {"supported", "partial"}:
@@ -231,6 +267,7 @@ def _project_ability_features(
                     "effect.token.v1", "theme", "tokens", "producer",
                     effect.evidence,
                     "Creates a friendly creature token; no payoff is inferred.",
+                    context(ability, effect),
                 )
             if (
                 effect.kind == "create_noncreature_token"
@@ -241,6 +278,7 @@ def _project_ability_features(
                     "effect.noncreature_token.v1", "theme", "tokens", "producer",
                     effect.evidence,
                     "Creates a reviewed named noncreature token; no use or payoff is inferred.",
+                    context(ability, effect),
                 )
             if (
                 effect.kind == "gain_life"
@@ -251,6 +289,7 @@ def _project_ability_features(
                     "effect.lifegain.v1", "theme", "lifegain", "producer",
                     effect.evidence,
                     "Explicitly instructs you to gain life; no strategic value is inferred.",
+                    context(ability, effect),
                 )
             if (
                 effect.kind == "put_counter"
@@ -262,6 +301,7 @@ def _project_ability_features(
                     "effect.counter.v1", "theme", "counters", "producer",
                     effect.evidence,
                     "Explicitly places +1/+1 counters; no archetype is inferred.",
+                    context(ability, effect),
                 )
         if (
             permanent
@@ -286,6 +326,7 @@ def _project_ability_features(
                 "trigger.lifegain.v1", "theme", "lifegain", "payoff",
                 ability.raw_text,
                 "Listens for you gaining life; it does not itself gain life.",
+                context(ability),
             )
         if (
             permanent
@@ -297,6 +338,7 @@ def _project_ability_features(
                 "trigger.counter.v1", "theme", "counters", "payoff",
                 ability.raw_text,
                 "Listens for +1/+1 counter placement; it does not itself place counters.",
+                context(ability),
             )
         if (
             ability.trigger is not None
@@ -308,11 +350,13 @@ def _project_ability_features(
                 "trigger.spells.v1", "role", "card_draw", "conditional",
                 ability.raw_text,
                 "Draw requires you to cast an instant or sorcery spell.",
+                context(ability),
             )
             feature(
                 "trigger.spells.v1", "theme", "spells", "payoff",
                 ability.raw_text,
                 "Draw requires you to cast an instant or sorcery spell.",
+                context(ability),
             )
         if (
             ability.trigger is not None
@@ -324,11 +368,13 @@ def _project_ability_features(
                 "trigger.token_draw.v1", "role", "card_draw", "conditional",
                 ability.raw_text,
                 "Draw requires a token to enter under your control.",
+                context(ability),
             )
             feature(
                 "trigger.token_draw.v1", "theme", "tokens", "payoff",
                 ability.raw_text,
                 "Draw requires a token to enter under your control.",
+                context(ability),
             )
         sacrifice_another = any(
             cost.kind == "sacrifice"
@@ -341,11 +387,13 @@ def _project_ability_features(
                 "cost.sacrifice_draw.v1", "role", "card_draw", "conditional",
                 ability.raw_text,
                 "Activated permanent ability sacrifices another creature to draw.",
+                context(ability),
             )
             feature(
                 "cost.sacrifice_draw.v1", "theme", "sacrifice", "consumer",
                 ability.raw_text,
                 "Activated permanent ability consumes another creature as its cost.",
+                context(ability),
             )
     return projected
 
@@ -356,9 +404,15 @@ def classify_card(card: Card) -> dict:
     permanent = bool(types & {"Creature", "Artifact", "Enchantment", "Land", "Planeswalker"})
     text_lines = [line.strip() for line in card.rules_text.splitlines() if line.strip()]
 
-    def add(rule_id, dimension, label, relationship, evidence, explanation):
-        features.append(dict(rule_id=rule_id, dimension=dimension, label=label,
-                             relationship=relationship, evidence=evidence, explanation=explanation))
+    def add(
+        rule_id, dimension, label, relationship, evidence, explanation,
+        dependency_context=None,
+    ):
+        item = dict(rule_id=rule_id, dimension=dimension, label=label,
+                    relationship=relationship, evidence=evidence, explanation=explanation)
+        if dependency_context is not None:
+            item["dependency_context"] = dependency_context
+        features.append(item)
 
     for type_name, theme in (("Artifact", "artifacts"), ("Enchantment", "enchantments"), ("Land", "lands")):
         if type_name in types:
@@ -366,7 +420,18 @@ def classify_card(card: Card) -> dict:
                 "Card has the " + type_name + " type; no payoff is inferred.")
     if types & {"Instant", "Sorcery"}:
         add("type.spells.v1", "theme", "spells", "enabler", card.types,
-            "Casting this instant/sorcery can enable a matching cast trigger.")
+            "Casting this instant/sorcery can enable a matching cast trigger.",
+            {
+                "ability_id": None,
+                "ability_kind": "card_type",
+                "availability": "unconditional",
+                "prerequisites": {
+                    "trigger": None, "costs": [], "conditions": [], "qualifiers": [],
+                },
+                "effect": None,
+                "parse_status": "supported",
+                "unsupported_remainder": [],
+            })
     cannot_attack = any(
         line.casefold() == "defender"
         or line.casefold() == "this creature can't attack."
@@ -464,26 +529,7 @@ def classify_card(card: Card) -> dict:
 
 
 def interactions(cards: list[dict]) -> list[dict]:
-    result = []
-    # Exact feature pairs, never a shared-theme join. All require distinct titles.
-    for source in cards:
-        for beneficiary in cards:
-            if source["title_id"] == beneficiary["title_id"]:
-                continue
-            for family in INTERACTION_FAMILIES:
-                a = next((f for f in source["features"]
-                          if f["rule_id"] == family.source_feature_rule_id), None)
-                b = next((f for f in beneficiary["features"]
-                          if f["rule_id"] == family.beneficiary_feature_rule_id), None)
-                if a and b:
-                    result.append(dict(
-                        rule_id=family.family_id,
-                        source_title_id=source["title_id"],
-                        target_title_id=beneficiary["title_id"],
-                        explanation=family.explanation,
-                        evidence=[a, b],
-                    ))
-    return sorted(result, key=lambda x: (x["rule_id"], x["source_title_id"], x["target_title_id"]))
+    return interaction_findings(cards)
 
 
 def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
