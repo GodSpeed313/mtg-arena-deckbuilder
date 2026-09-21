@@ -600,6 +600,44 @@ candidate, recommend deck changes, compare unrelated need pools, or mutate a dec
 python -m unittest tests.test_candidate_comparison -v
 ```
 
+### Deterministic strategic-fit signals (Pass #6B)
+
+Strategic Fit Model Version 1 consumes only the complete Candidate Comparison
+Model Version 1. Call
+`services.strategic_fit.build_strategic_fit_signals(candidate_comparison)` to
+derive named, registry-driven interpretations from already-reviewed comparison
+facts. It rejects pair projections and does not query the database, parse rules
+text, rediscover candidates, or reconstruct needs, dependencies, packages, or
+eligibility.
+
+Signals have stable versioned IDs, an explicit category and scope, a `present`
+state, exact source paths, copied evidence, and a fixed explanation. The three
+scopes are title-wide facts, one candidate under one structured source need, and
+facts applying to one returned need pool. Candidate-need records reference
+applicable title and pool signal IDs rather than duplicating those records.
+
+The bounded Version 1 registry describes observed need coverage, reviewed
+functional-package relationships, unconditional or prerequisite-bearing support,
+conditional/triggered/activated support, partial or unsupported evidence,
+alternative acceptable rule paths, explicit eligibility uncertainty, known or
+unknown ownership, positive finite or unlimited copy capacity, pool truncation,
+and the unavailable zone-level evidence boundary. Package relationships remain
+explicitly local to returned candidates. Multiple support paths remain separate,
+so apparently mixed support signals may coexist without being collapsed.
+
+Signals have no polarity or hidden weighting. Their number has no strategic
+meaning, and an absent signal means only that its exact registry predicate was
+not established. The model does not evaluate mana position, castability, curve
+fit, package sufficiency, ownership or crafting desirability, or card strength.
+It does not select, compare strategically, recommend, replace, optimize, or
+mutate anything. A returned candidate with zero or negative finite copy capacity
+is rejected as contradictory to Candidate Model Version 2 rather than converted
+into a signal.
+
+```powershell
+python -m unittest tests.test_strategic_fit -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
