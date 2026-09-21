@@ -638,6 +638,36 @@ into a signal.
 python -m unittest tests.test_strategic_fit -v
 ```
 
+### Strategic preference policy (Pass #6C)
+
+Strategic Preference Policy Model Version 1 records explicit policy without
+ordering candidates. Call
+`services.preference_policy.build_preference_policy(policy_spec)` to validate
+and normalize a caller-declared lexicographic policy. Version 1 accepts only an
+`explicit_user` or `explicit_operator_profile` source with provenance. It does
+not infer objectives from a deck, archetype, account, or candidate pool.
+
+The reviewed criterion registry references only Candidate Comparison Model
+Version 1 fields and Strategic Fit Model Version 1 signal IDs. It includes
+observed-need count, mana value, named-package presence, package count, selected
+support-context signal presence, unresolved-eligibility presence, known-
+ownership presence, and finite or unlimited copy-capacity presence. Criteria
+have no direction of their own: every rule must explicitly supply an allowed
+direction and choose `indeterminate` or `equal_for_this_rule` for unknown facts.
+A named-package rule must identify an existing Functional Package Model Version
+1 package; arbitrary paths and signal IDs are rejected.
+
+Rule order is preserved as future lexicographic precedence. No weights, utility,
+aggregate values, candidate records, or ordering result are produced. An empty
+rule list is valid and means no strategic preference has been declared.
+Deterministic ineligibility remains a downstream malformed-input condition, while
+unresolved eligibility remains explicit and separate from strategic rules.
+Canonical name/title-ID serialization is always marked non-strategic.
+
+```powershell
+python -m unittest tests.test_preference_policy -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
