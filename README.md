@@ -559,8 +559,45 @@ costs, card-face choices, source probabilities and game simulation are outside s
 No ownership, crafting, archive conversion, automatic construction or replacement
 is performed. Analysis never changes the database or validator rules.
 
+### Deterministic candidate comparison facts (Pass #6A)
+
+Candidate Comparison Model Version 1 consumes Candidate Facts Model Version 2
+without a database connection. Call
+`services.candidate_comparison.build_candidate_comparisons(candidate_facts)` to
+produce a normalized title index and per-need comparison matrices. Canonical
+titles are stored once, while exact need-specific matching evidence and structured
+support prerequisites remain attached to each candidate occurrence.
+
+Comparisons are restricted to candidates returned for the same structured need,
+identified by zone, finding ID, and dependency ID. The title index may report all
+such need occurrences and their count, but the count has no strategic meaning.
+Candidate and need ordering is deterministic and explicitly non-ranking.
+
+Scalar and structured dimensions use only `same`, `different`, `unknown`, and
+`not_applicable`. Candidate-side facts distinguish `known`, `unknown`, and
+`not_applicable`. Mana, canonical characteristics, printing facts, eligibility,
+ownership, crafting state, functional packages, reviewed features, support
+availability, ability kind, parse status, prerequisites, alternatives, and
+unsupported remainders are copied or neutrally compared without reinterpretation.
+
+Package output includes IDs shared by every returned candidate and package IDs
+exclusive to one candidate within that returned pool. Pool-local exclusivity does
+not claim global uniqueness. An individual pair can be projected explicitly with
+`compare_candidate_pair(...)`; the primary model never materializes every possible
+pair.
+
+Candidate Facts Version 2 does not carry the original zone-level evidence boundary,
+so comparison output reports that completeness as `unknown` with reason
+`source_evidence_boundary_not_present_in_candidate_facts_v2`. Feature-level partial
+and unsupported evidence remains visible. Truncated pools remain marked as
+truncated, and comparisons cover only returned candidates.
+
+This layer does not search for candidates, query the database, parse rules text,
+rebuild needs, alter eligibility, score or order candidates strategically, choose a
+candidate, recommend deck changes, compare unrelated need pools, or mutate a deck.
+
 ```powershell
-python -m unittest tests.test_intelligence -v
+python -m unittest tests.test_candidate_comparison -v
 ```
 
 ## Deterministic deck diagnosis (intelligence pass #2)
