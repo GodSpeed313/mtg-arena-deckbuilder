@@ -711,6 +711,48 @@ mutate a deck, or add CLI/UI behavior.
 python -m unittest tests.test_candidate_ordering -v
 ```
 
+### Recommendation decision model (Pass #6E)
+
+Recommendation Decision Model Version 1 consumes only a complete Candidate
+Ordering Model Version 1. Call
+`services.recommendation.build_recommendation_decisions(ordering)` to obtain one
+read-only decision per structured need. It uses the pair relationships and
+provenance already emitted by #6D; it does not evaluate preference rules again,
+query cards, or search for candidates.
+
+A candidate is `recommendable` only when an explicit policy applies, at least
+two candidates were considered, and one candidate directly `precedes` every
+other candidate in that need. That candidate's eligibility must be `eligible`
+with no unresolved dimensions. This is a unique strategic first among the
+returned candidates, not a claim that every possible Magic card was considered.
+For example, `A > B`, `A > C`, `B ? C` can support A because the uncertain
+relation cannot challenge first place. `A > B`, `A ? C` cannot support A.
+
+The closed outcome vocabulary is `recommendable`, `top_tie`,
+`indeterminate_ordering`, `inconsistent_ordering`, `no_declared_preference`,
+`policy_not_applicable`, `no_candidates`, `single_candidate_no_preference`, and
+`unresolved_eligibility`. An exact tie for first cannot be broken by canonical
+name or title-ID serialization. A pool with only one returned candidate has no
+policy comparison establishing a preference, even when its policy contains
+rules, so it is not recommended. An unresolved first candidate is reported as
+blocked with its unresolved dimensions; unknown eligibility is never assumed
+legal. Malformed or contradictory ordering records fail closed.
+
+Positive decisions retain the winning candidate, structured need key and
+source-need reference, policy source, model versions, and every decisive pair
+with its rule trace and source fact paths. Negative decisions retain a
+machine-readable reason and applicable pair or eligibility evidence. The
+output is deterministic and leaves its input unchanged.
+
+`recommendable` means only that the explicit policy uniquely preferred this
+candidate within its returned need pool. Recommendation Decision v1 does not
+mutate the deck or determine replacement quantities. It also does not select a
+card to remove, spend wildcards, validate a proposed deck, or add CLI/UI behavior.
+
+```powershell
+python -m unittest tests.test_recommendation -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
