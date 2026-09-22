@@ -668,6 +668,49 @@ Canonical name/title-ID serialization is always marked non-strategic.
 python -m unittest tests.test_preference_policy -v
 ```
 
+### Deterministic lexicographic candidate ordering (Pass #6D)
+
+Candidate Ordering Model Version 1 consumes complete Candidate Comparison Model
+Version 1, Strategic Fit Model Version 1, and a normalized Strategic Preference
+Policy Model Version 1. Call
+`services.candidate_ordering.build_candidate_ordering(comparison, fit, policy)`.
+The builder validates that the fit signals agree with the comparison facts and
+that the policy is an explicit, reviewed #6C policy. It does not access a database.
+
+For each structured need, candidate pairs are evaluated in declared policy-rule
+order. A different known value applies that rule's explicit direction and stops;
+equal known values continue. An unknown fact with `equal_for_this_rule` continues
+without deciding that rule. An unknown fact with `indeterminate` stops and marks
+the pair indeterminate. No rule defaults, hidden weights, scores, or secondary
+strategic tiebreakers are supplied. An empty rule list means no strategic
+preference was declared.
+
+Each pair result states `precedes`, `tie`, or `indeterminate` and records every
+evaluated rule through the decisive or blocking rule, including policy and
+criterion IDs, direction, candidate facts, source paths, and provenance. Pairs
+are formed only within one zone-aware structured need. Explicit zone and need-key
+scope is honored; outside it, the pool is `policy_not_applicable`. Pool states
+also distinguish `no_declared_preference`, `tied`, `strategically_ordered`, and
+`indeterminate`; a pool with fewer than two candidates is
+`insufficient_candidates`. Deterministic ineligibility fails input validation; unresolved
+eligibility remains in the serialized candidate records and is never silently
+resolved.
+
+`serialized_candidates` always uses case-folded name then title ID solely for
+stable presentation. It conveys no strategic precedence. `ordered_groups` is
+present only when all pair results form a consistent total preorder; each inner
+group is a strategic tie. Unknown-skipping rules can yield pair relationships
+that do not form such a preorder, in which case the pair evidence remains and
+the pool is indeterminate. Pair materialization is quadratic in a returned
+need pool's size; callers should use the existing candidate pool limit.
+
+This pass does not recommend deck changes, select replacements or quantities,
+mutate a deck, or add CLI/UI behavior.
+
+```powershell
+python -m unittest tests.test_candidate_ordering -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
