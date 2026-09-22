@@ -753,6 +753,50 @@ card to remove, spend wildcards, validate a proposed deck, or add CLI/UI behavio
 python -m unittest tests.test_recommendation -v
 ```
 
+### Recommendation context model (Pass #6F)
+
+Recommendation Context Model Version 1 is a read-only evidence bridge. Call
+`services.recommendation_context.build_recommendation_context(decisions, comparison)`
+with Recommendation Decision Model v1 and Candidate Comparison Model v1 outputs.
+It reconciles structured need keys, canonical title identities, returned-pool
+membership, source references, and model versions, failing closed on
+contradictions. It neither rediscovers candidates nor revisits strategic fit,
+preference, ordering, or the #6E outcome.
+
+Each need retains the exact #6E decision (including every negative outcome),
+the #6A structured-need evidence, source-pool summary, and returned candidate
+facts. Candidate facts preserve canonical title identity, eligible Arena
+printing IDs as a set of options, known printings, eligibility, ownership,
+remaining copy capacity, and exact need-matching evidence. No printing is
+selected. Unknown ownership remains distinct from known-zero ownership;
+finite positive remaining capacity remains distinct from unlimited capacity.
+Returned candidates cannot have zero finite capacity under the upstream #6A
+contract, so a contradictory zero-capacity input is rejected, not converted
+into a new recommendation or action blocker.
+
+The closed descriptive context-condition vocabulary is
+`candidate_pool_truncated` (pool level), and
+`multiple_eligible_printings`, `ownership_unknown`, `ownership_known_zero`,
+and `unresolved_eligibility` (candidate level). These are facts for a future
+planning contract, not universal blockers or an overall readiness score.
+
+`recommendable` means uniquely preferred among the candidates represented by
+the returned candidate pool under the applicable explicit policy. A truncated
+source pool is not evidence of exhaustive candidate coverage. #6F preserves
+the positive #6E decision and surfaces truncation; it does not resolve it or
+claim that no unseen candidate could outrank the returned first candidate.
+Negative #6E decisions are carried unchanged, with no candidate resurrected
+from comparison facts. Version fields, policy source, relation evidence, and
+source paths preserve provenance back through #6E–#6A to candidate and need
+evidence.
+
+#6F selects no quantity, removal, replacement, printing, or crafting action;
+it makes no deck change or legality conclusion and adds no CLI/UI behavior.
+
+```powershell
+python -m unittest tests.test_recommendation_context -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
