@@ -797,6 +797,48 @@ it makes no deck change or legality conclusion and adds no CLI/UI behavior.
 python -m unittest tests.test_recommendation_context -v
 ```
 
+### Proposal policy model (Pass #6G)
+
+A #6F recommendation is strategic evidence, not permission to edit a deck.
+Proposal Policy Model Version 1 records separate, explicit authority for a
+narrow future proposal shape. Call
+`services.proposal_policy.build_proposal_policy(policy_spec)` with a complete
+caller declaration. It accepts only `explicit_user` or
+`explicit_operator_profile` source provenance with a non-empty reference; no
+deck, candidate, recommendation, or context fact grants authority by itself.
+Empty, partial, inferred, and free-form policies are rejected.
+
+The declaration names exactly one structured `need_key` and an independent,
+explicit `target_zone` (`main`, `sideboard`, or `commander`). A source need's
+zone is not presumed to be the desired edit zone. All V1 fields are mandatory:
+`recommendation_requirement: recommendable`,
+`candidate_pool_requirement: complete_only`,
+`eligibility_requirement: resolved`,
+`printing_requirement: single_eligible_printing`, `operation: add_only`,
+`quantity: 1`, and `resource_mode: unlimited`. These declared gates require
+#6H to abstain on negative #6E outcomes, truncated pools, unresolved
+eligibility, or multiple eligible printings. V1 excludes swaps, removals,
+dynamic quantities, owned-only and wildcard-budget modes, crafting, and
+wildcard spending. The policy does not choose a printing; it requires that
+the future #6H application find exactly one eligible printing.
+
+#6G deliberately defines policy without evaluating a #6F context. This mirrors
+#6C's separation of explicit policy definition from later application. #6H
+must reconcile the declared need with the actual #6F context, enforce every
+gate, and check the immutable baseline Deck for room and current copy capacity
+before constructing and validating a concrete proposal. A policy declaration
+alone is neither evidence of a deck slot nor a valid proposed deck. Policy ID,
+source provenance, model version, and required #6F version remain available
+for a future proposal trace distinct from #6E's strategic preference trace.
+
+Proposal Policy v1 authorizes a narrowly defined proposal shape. It does not
+construct, validate, apply, or save a deck change. It makes no removal,
+replacement, crafting, or printing choice and adds no CLI/UI behavior.
+
+```powershell
+python -m unittest tests.test_proposal_policy -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
