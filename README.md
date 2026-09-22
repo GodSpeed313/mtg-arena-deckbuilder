@@ -839,6 +839,59 @@ replacement, crafting, or printing choice and adds no CLI/UI behavior.
 python -m unittest tests.test_proposal_policy -v
 ```
 
+### Proposal construction and validation (Pass #6H)
+
+Proposal Model Version 1 applies one normalized #6G policy to one matching #6F
+structured-need context and an explicitly supplied baseline `Deck`. Call
+`services.proposal.build_proposal(context, policy, baseline_deck, con,
+format=loaded_format, rules=deck_rules)`. The SQLite connection, `Format`, and
+`DeckRules` are required inputs; #6H does not open a database, load a format,
+or silently use validator defaults. It calls `validate_deck` exactly once in
+`unlimited` mode and passes the supplied format and rules. Collection and
+wildcard inventory are outside V1.
+
+The builder revalidates the complete #6G declaration, reconciles the exact
+structured need and #6E decision with #6F, and requires a positive
+`recommendable` outcome, an untruncated returned pool, resolved eligibility,
+and exactly one eligible Arena printing. It checks the supplied format identity
+and compares the candidate's recorded title-level deck count with copies of
+its known printings in the baseline. The explicitly declared #6G target zone
+is authoritative, even when different from the need zone. Deck size, copy
+limits, color identity, format restrictions, and commander rules remain the
+existing validator's decisions.
+
+For the singleton printing only, #6H constructs the concrete delta
+`{operation: add, arena_id, zone, quantity: 1, title_id, name, need_key}`.
+It copies all three printing-quantity zones into a separate `Deck`, increments
+only that printing in the declared zone, and preserves unrelated contents and
+deck identity. This is deterministic realization of one eligible printing,
+not a printing tie-break or quantity choice. The result retains the #6G policy,
+selected #6F context, and the validator's structured errors, warnings, and
+wildcard-cost report, plus the supplied Format and DeckRules, for traceability.
+
+The closed outcome statuses are `accepted`, `abstained`, and `rejected`.
+`validated` is the sole accepted reason. Abstention reasons are
+`policy_context_mismatch`, `recommendation_not_positive`,
+`candidate_pool_truncated`, `unresolved_eligibility`,
+`printing_cardinality_mismatch`, `baseline_context_mismatch`, and
+`validation_failed`. Rejection reasons are `unsupported_operation`,
+`unsupported_quantity`, `unsupported_resource_mode`, `malformed_input`,
+`malformed_baseline`, `policy_context_mismatch`, and `validation_unavailable`.
+Only an accepted result contains a proposed Deck. `validation_failed` retains
+the attempted delta and complete validator evidence but no accepted proposal.
+There is no repair loop or fallback printing, quantity, removal, or resource mode.
+
+Proposal Construction & Validation v1 may construct a new proposed Deck but
+never mutates, saves, exports, or applies the supplied baseline Deck. A failed
+validation produces no accepted proposal and does not authorize an automatic
+removal, replacement, retry, or repair. Acceptance means only that this exact
+add-one delta passed the validator under the supplied validation context; it
+does not mean a user accepted it or Arena was changed. No CLI/UI was added.
+
+```powershell
+python -m unittest tests.test_proposal -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
