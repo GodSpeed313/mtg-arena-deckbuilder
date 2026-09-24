@@ -40,6 +40,39 @@ _DELTA_FIELDS = frozenset({
     "operation", "arena_id", "zone", "quantity", "title_id", "name", "need_key",
 })
 _ZONES = ("main", "sideboard", "commander")
+_BOUNDARY_SEMANTICS = [
+    "validator-accepted", "not-user-approved", "not-applied",
+    "not-resource-authorized",
+]
+_RESOURCE_DISCLOSURE = "unlimited; ownership and wildcard resources not authorized"
+_FRESHNESS_DISCLOSURE = "captured validation is not a claim of current validity"
+_REVIEW_LIMITATIONS = [
+    "This artifact presents one validator-accepted proposal and records no human approval.",
+    "It does not mutate, persist, export, apply, or authorize the proposed change.",
+    "Execution requires a fresh baseline identity check and fresh validation.",
+    "Unlimited validation does not establish ownership, affordability, or spending authority.",
+    "Identity digests detect mismatches; they are not signatures or authentication.",
+]
+_PRESENTATION_FIELDS = frozenset({
+    "proposal_presentation_model_version", "source_proposal_model_version", "status",
+    "reason", "proposal_identity", "presentation_identity", "review_artifact",
+})
+_PROPOSAL_IDENTITY_PAYLOAD_FIELDS = frozenset({
+    "source_proposal_model_version", "source_proposal_policy",
+    "recommendation_provenance", "source_baseline_deck_identity", "delta",
+    "resulting_deck_identity", "captured_validation_semantics",
+})
+_REVIEW_FIELDS = frozenset({
+    "boundary_semantics", "proposal", "source_baseline_deck_identity",
+    "resulting_deck_identity", "proposal_policy", "recommendation_provenance",
+    "validation", "limitations",
+})
+_SEMANTIC_POLICY_FIELDS = (
+    "proposal_policy_model_version", "required_recommendation_context_model_version",
+    "policy_id", "policy_source", "need_key", "recommendation_requirement",
+    "candidate_pool_requirement", "eligibility_requirement", "printing_requirement",
+    "operation", "quantity", "target_zone", "resource_mode",
+)
 
 
 def _mapping(value: Any, label: str, fields: frozenset[str] | None = None) -> dict:
@@ -92,6 +125,22 @@ def _identity(version_field: str, version: str, payload: dict) -> dict:
         "canonical_payload": deepcopy(payload),
         "digest": hashlib.sha256(encoded).hexdigest(),
     }
+
+
+def _require_identity(value: Any, *, version_field: str, version: str,
+                      label: str) -> dict:
+    record = _mapping(
+        value, label,
+        frozenset({version_field, "digest_algorithm", "canonical_payload", "digest"}),
+    )
+    if record[version_field] != version or record["digest_algorithm"] != (
+        IDENTITY_DIGEST_ALGORITHM
+    ) or not isinstance(record["canonical_payload"], dict) or type(record["digest"]) is not str:
+        raise ValueError(f"{label} version or algorithm is unsupported")
+    expected = hashlib.sha256(_encoded(record["canonical_payload"])).hexdigest()
+    if record["digest"] != expected:
+        raise ValueError(f"{label} digest contradicts its canonical payload")
+    return deepcopy(record)
 
 
 def _string_set(value: Any, label: str) -> list[str]:
@@ -225,6 +274,122 @@ def _canonical_validation_inputs(value: Any) -> dict:
     return result
 
 
+def _canonical_list(value: Any, label: str, item_type: type) -> list:
+    if not isinstance(value, list) or any(type(item) is not item_type for item in value) or (
+        len(value) != len(set(value)) or value != sorted(value)
+    ):
+        raise ValueError(f"{label} is not canonical")
+    return value
+
+
+def _canonical_quotas(value: Any, label: str, *, nullable: bool = False) -> dict:
+    if not isinstance(value, list):
+        raise ValueError(f"{label} is not canonical")
+    result = {}
+    for entry in value:
+        if not isinstance(entry, list) or len(entry) != 2:
+            raise ValueError(f"{label} is not canonical")
+        key, quantity = entry
+        _integer(key, f"{label} key", minimum=1)
+        if quantity is not None:
+            _integer(quantity, f"{label} quantity", minimum=0)
+        elif not nullable:
+            raise ValueError(f"{label} is not canonical")
+        if key in result:
+            raise ValueError(f"{label} is not canonical")
+        result[key] = quantity
+    if value != [[key, result[key]] for key in sorted(result)]:
+        raise ValueError(f"{label} is not canonical")
+    return result
+
+
+def _require_validation_semantics(value: Any) -> dict:
+    semantics = _mapping(
+        value, "captured validation semantics", frozenset({"mode", "format", "rules"}),
+    )
+    format_fields = frozenset({
+        "name", "legal_sets", "filter_sets", "banned_title_ids", "allowed_title_ids",
+        "suppressed_title_ids", "suspended_title_ids", "allowed_commander_title_ids",
+        "individual_card_quotas", "rarity_card_quotas", "min_deck_size",
+        "max_deck_size", "max_sideboard", "min_command_zone", "max_command_zone",
+        "uses_rebalanced_cards", "format_type_internal",
+        "card_count_restriction_internal", "sideboard_behavior_internal",
+        "color_restrictions_internal",
+    })
+    rules_fields = frozenset({
+        "min_main", "max_main", "max_sideboard", "min_commanders", "max_commanders",
+        "copy_limit", "allowed_colors",
+    })
+    format_value = _mapping(semantics["format"], "captured format semantics", format_fields)
+    rules_value = _mapping(semantics["rules"], "captured rule semantics", rules_fields)
+
+    def optional_ids(field: str) -> frozenset[int] | None:
+        raw = format_value[field]
+        return None if raw is None else frozenset(
+            _canonical_list(raw, f"format {field}", int)
+        )
+
+    restrictions = format_value["color_restrictions_internal"]
+    if not isinstance(restrictions, list):
+        raise ValueError("format color restrictions are not canonical")
+    canonical_restrictions = tuple(
+        frozenset(_canonical_list(item, "format color restriction", int))
+        for item in restrictions
+    )
+    format_object = Format(
+        name=format_value["name"],
+        legal_sets=frozenset(_canonical_list(format_value["legal_sets"],
+                                             "format legal sets", str)),
+        filter_sets=frozenset(_canonical_list(format_value["filter_sets"],
+                                              "format filter sets", str)),
+        banned_title_ids=frozenset(_canonical_list(
+            format_value["banned_title_ids"], "format banned titles", int,
+        )),
+        allowed_title_ids=optional_ids("allowed_title_ids"),
+        suppressed_title_ids=frozenset(_canonical_list(
+            format_value["suppressed_title_ids"], "format suppressed titles", int,
+        )),
+        suspended_title_ids=frozenset(_canonical_list(
+            format_value["suspended_title_ids"], "format suspended titles", int,
+        )),
+        allowed_commander_title_ids=optional_ids("allowed_commander_title_ids"),
+        individual_card_quotas=_canonical_quotas(
+            format_value["individual_card_quotas"], "format individual-card quotas",
+        ),
+        rarity_card_quotas=_canonical_quotas(
+            format_value["rarity_card_quotas"], "format rarity quotas", nullable=True,
+        ),
+        min_deck_size=format_value["min_deck_size"],
+        max_deck_size=format_value["max_deck_size"],
+        max_sideboard=format_value["max_sideboard"],
+        min_command_zone=format_value["min_command_zone"],
+        max_command_zone=format_value["max_command_zone"],
+        uses_rebalanced_cards=format_value["uses_rebalanced_cards"],
+        format_type_internal=format_value["format_type_internal"],
+        card_count_restriction_internal=format_value["card_count_restriction_internal"],
+        sideboard_behavior_internal=format_value["sideboard_behavior_internal"],
+        color_restrictions_internal=canonical_restrictions,
+    )
+    allowed_colors = rules_value["allowed_colors"]
+    rules_object = DeckRules(
+        min_main=rules_value["min_main"],
+        max_main=rules_value["max_main"],
+        max_sideboard=rules_value["max_sideboard"],
+        min_commanders=rules_value["min_commanders"],
+        max_commanders=rules_value["max_commanders"],
+        copy_limit=rules_value["copy_limit"],
+        allowed_colors=(None if allowed_colors is None else frozenset(
+            _canonical_list(allowed_colors, "allowed rule colors", str)
+        )),
+    )
+    normalized = _canonical_validation_inputs({
+        "mode": semantics["mode"], "format": format_object, "rules": rules_object,
+    })
+    if normalized != semantics:
+        raise ValueError("captured validation semantics are not canonical")
+    return deepcopy(normalized)
+
+
 def _validation_evidence(value: Any) -> dict:
     evidence = _mapping(
         value, "validation evidence",
@@ -278,6 +443,72 @@ def _policy(value: Any) -> dict:
     if normalized != policy:
         raise ValueError("source proposal policy is not normalized")
     return normalized
+
+
+def _semantic_policy(value: Any) -> dict:
+    policy = _mapping(
+        value, "semantic proposal policy", frozenset(_SEMANTIC_POLICY_FIELDS),
+    )
+    try:
+        normalized = build_proposal_policy({field: policy[field] for field in _POLICY_FIELDS})
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("semantic proposal policy is malformed") from exc
+    expected = {key: deepcopy(normalized[key]) for key in _SEMANTIC_POLICY_FIELDS}
+    if expected != policy:
+        raise ValueError("semantic proposal policy is not normalized")
+    return expected
+
+
+def _semantic_delta(value: Any) -> dict:
+    delta = _mapping(
+        value, "semantic proposal delta",
+        frozenset({"operation", "arena_id", "zone", "quantity", "title_id", "need_key"}),
+    )
+    if delta["operation"] != "add" or delta["zone"] not in _ZONES:
+        raise ValueError("semantic proposal delta is unsupported")
+    return {
+        "operation": "add",
+        "arena_id": _integer(delta["arena_id"], "delta Arena ID", minimum=1),
+        "zone": delta["zone"],
+        "quantity": _integer(delta["quantity"], "delta quantity", minimum=1),
+        "title_id": _integer(delta["title_id"], "delta title ID", minimum=1),
+        "need_key": _need_key(delta["need_key"]),
+    }
+
+
+def _require_recommendation_provenance(value: Any, need: dict) -> dict:
+    provenance = _mapping(
+        value, "recommendation provenance",
+        frozenset({
+            "policy_id", "policy_source", "ordering_model_version",
+            "source_need_reference",
+        }),
+    )
+    policy_source = _mapping(
+        provenance["policy_source"], "recommendation policy source",
+        frozenset({"kind", "provenance"}),
+    )
+    if policy_source["kind"] not in {"explicit_user", "explicit_operator_profile"}:
+        raise ValueError("recommendation policy provenance is unsupported")
+    source_provenance = _mapping(
+        policy_source["provenance"], "recommendation policy provenance",
+        frozenset({"reference"}),
+    )
+    _text(source_provenance["reference"], "recommendation policy reference")
+    expected_reference = (
+        f"need_matrices[need_key={need['zone']}|{need['finding_id']}|"
+        f"{need['dependency_id']}].source_need"
+    )
+    if provenance["ordering_model_version"] != "2" or (
+        provenance["source_need_reference"] != expected_reference
+    ):
+        raise ValueError("recommendation provenance is contradictory")
+    return {
+        "policy_id": _text(provenance["policy_id"], "recommendation policy ID"),
+        "policy_source": deepcopy(policy_source),
+        "ordering_model_version": "2",
+        "source_need_reference": expected_reference,
+    }
 
 
 def _recommendation_context(value: Any, policy: dict, delta: dict) -> tuple[dict, dict]:
@@ -442,6 +673,109 @@ def _expected_result_identity(baseline_identity: dict, delta: dict) -> dict:
     ))
 
 
+def require_proposal_presentation(value: dict) -> dict:
+    """Require a complete, internally consistent Proposal Presentation v1."""
+    presentation = _mapping(value, "proposal presentation", _PRESENTATION_FIELDS)
+    if presentation["proposal_presentation_model_version"] != (
+        PROPOSAL_PRESENTATION_MODEL_VERSION
+    ) or presentation["source_proposal_model_version"] != "2" or (
+        presentation["status"] != "presentable"
+        or presentation["reason"] != "validator_accepted"
+    ):
+        raise ValueError("Proposal Presentation Model Version 1 is required")
+
+    proposal_identity = _require_identity(
+        presentation["proposal_identity"],
+        version_field="proposal_identity_version", version=PROPOSAL_IDENTITY_VERSION,
+        label="proposal identity",
+    )
+    semantic = _mapping(
+        proposal_identity["canonical_payload"], "proposal identity payload",
+        _PROPOSAL_IDENTITY_PAYLOAD_FIELDS,
+    )
+    if semantic["source_proposal_model_version"] != "2":
+        raise ValueError("proposal identity source version is unsupported")
+    policy = _semantic_policy(semantic["source_proposal_policy"])
+    delta = _semantic_delta(semantic["delta"])
+    if policy["need_key"] != delta["need_key"] or policy["operation"] != "add_only" or (
+        policy["quantity"] != delta["quantity"]
+        or policy["target_zone"] != delta["zone"]
+        or policy["resource_mode"] != "unlimited"
+    ):
+        raise ValueError("proposal policy contradicts the semantic delta")
+    recommendation = _require_recommendation_provenance(
+        semantic["recommendation_provenance"], delta["need_key"],
+    )
+    if recommendation["policy_source"] != policy["policy_source"]:
+        raise ValueError("recommendation and proposal policy provenance contradict")
+    baseline = require_deck_snapshot_identity(semantic["source_baseline_deck_identity"])
+    result = require_deck_snapshot_identity(semantic["resulting_deck_identity"])
+    if result != _expected_result_identity(baseline, delta):
+        raise ValueError("resulting gameplay state is not exactly baseline plus the delta")
+    validation_semantics = _require_validation_semantics(
+        semantic["captured_validation_semantics"],
+    )
+
+    review = _mapping(presentation["review_artifact"], "review artifact", _REVIEW_FIELDS)
+    if review["boundary_semantics"] != _BOUNDARY_SEMANTICS or (
+        review["limitations"] != _REVIEW_LIMITATIONS
+    ):
+        raise ValueError("review boundary semantics or limitations are unsupported")
+    displayed = _mapping(
+        review["proposal"], "displayed proposal",
+        frozenset({"operation", "quantity", "target_zone", "card", "need_key"}),
+    )
+    card = _mapping(
+        displayed["card"], "displayed card",
+        frozenset({"title_id", "name", "arena_id"}),
+    )
+    _text(card["name"], "displayed card name")
+    expected_display = {
+        "operation": delta["operation"],
+        "quantity": delta["quantity"],
+        "target_zone": delta["zone"],
+        "card": {
+            "title_id": delta["title_id"], "name": card["name"],
+            "arena_id": delta["arena_id"],
+        },
+        "need_key": delta["need_key"],
+    }
+    if displayed != expected_display or review["source_baseline_deck_identity"] != baseline or (
+        review["resulting_deck_identity"] != result
+        or review["proposal_policy"] != policy
+        or review["recommendation_provenance"] != recommendation
+    ):
+        raise ValueError("review artifact contradicts the semantic proposal")
+    validation = _mapping(
+        review["validation"], "displayed validation",
+        frozenset({
+            "status", "evidence", "captured_semantics", "resource_mode_disclosure",
+            "freshness_disclosure",
+        }),
+    )
+    if validation["status"] != "validator-accepted" or (
+        validation["resource_mode_disclosure"] != _RESOURCE_DISCLOSURE
+        or validation["freshness_disclosure"] != _FRESHNESS_DISCLOSURE
+        or _validation_evidence(validation["evidence"]) != validation["evidence"]
+        or validation["captured_semantics"] != validation_semantics
+    ):
+        raise ValueError("displayed validation is malformed or contradictory")
+
+    presentation_identity = _require_identity(
+        presentation["presentation_identity"],
+        version_field="presentation_identity_version",
+        version=PRESENTATION_IDENTITY_VERSION,
+        label="presentation identity",
+    )
+    expected_presentation_payload = {
+        "proposal_identity": proposal_identity,
+        "review_artifact": review,
+    }
+    if presentation_identity["canonical_payload"] != expected_presentation_payload:
+        raise ValueError("presentation identity contradicts the review artifact")
+    return deepcopy(presentation)
+
+
 def build_proposal_presentation(proposal_result: dict) -> dict:
     """Create one deterministic review artifact; grant no approval or action."""
     source = _mapping(proposal_result, "proposal result", _PROPOSAL_FIELDS)
@@ -517,12 +851,9 @@ def build_proposal_presentation(proposal_result: dict) -> dict:
     semantic_delta = {key: deepcopy(delta[key]) for key in (
         "operation", "arena_id", "zone", "quantity", "title_id", "need_key",
     )}
-    semantic_policy = {key: deepcopy(policy[key]) for key in (
-        "proposal_policy_model_version", "required_recommendation_context_model_version",
-        "policy_id", "policy_source", "need_key", "recommendation_requirement",
-        "candidate_pool_requirement", "eligibility_requirement", "printing_requirement",
-        "operation", "quantity", "target_zone", "resource_mode",
-    )}
+    semantic_policy = {
+        key: deepcopy(policy[key]) for key in _SEMANTIC_POLICY_FIELDS
+    }
     semantic_payload = {
         "source_proposal_model_version": "2",
         "source_proposal_policy": semantic_policy,
@@ -537,10 +868,7 @@ def build_proposal_presentation(proposal_result: dict) -> dict:
     )
 
     review_artifact = {
-        "boundary_semantics": [
-            "validator-accepted", "not-user-approved", "not-applied",
-            "not-resource-authorized",
-        ],
+        "boundary_semantics": deepcopy(_BOUNDARY_SEMANTICS),
         "proposal": {
             "operation": delta["operation"],
             "quantity": delta["quantity"],
@@ -560,16 +888,10 @@ def build_proposal_presentation(proposal_result: dict) -> dict:
             "status": "validator-accepted",
             "evidence": validation,
             "captured_semantics": validation_semantics,
-            "resource_mode_disclosure": "unlimited; ownership and wildcard resources not authorized",
-            "freshness_disclosure": "captured validation is not a claim of current validity",
+            "resource_mode_disclosure": _RESOURCE_DISCLOSURE,
+            "freshness_disclosure": _FRESHNESS_DISCLOSURE,
         },
-        "limitations": [
-            "This artifact presents one validator-accepted proposal and records no human approval.",
-            "It does not mutate, persist, export, apply, or authorize the proposed change.",
-            "Execution requires a fresh baseline identity check and fresh validation.",
-            "Unlimited validation does not establish ownership, affordability, or spending authority.",
-            "Identity digests detect mismatches; they are not signatures or authentication.",
-        ],
+        "limitations": deepcopy(_REVIEW_LIMITATIONS),
     }
     presentation_identity = _identity(
         "presentation_identity_version", PRESENTATION_IDENTITY_VERSION,

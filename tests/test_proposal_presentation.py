@@ -14,6 +14,7 @@ from services.proposal_presentation import (
     PROPOSAL_IDENTITY_VERSION,
     PROPOSAL_PRESENTATION_MODEL_VERSION,
     build_proposal_presentation,
+    require_proposal_presentation,
 )
 from services.proposal_policy import build_proposal_policy
 from services.validator import DeckRules
@@ -360,6 +361,119 @@ class ProposalPresentationTests(unittest.TestCase):
         source["approval"] = True
         with self.assertRaises(ValueError):
             build_proposal_presentation(source)
+
+    def test_public_verifier_accepts_only_complete_unchanged_v1_artifact(self):
+        artifact = build_proposal_presentation(self.accepted())
+        before = deepcopy(artifact)
+        verified = require_proposal_presentation(artifact)
+        self.assertEqual(verified, artifact)
+        self.assertIsNot(verified, artifact)
+        self.assertEqual(artifact, before)
+
+        for field, value in (
+            ("proposal_presentation_model_version", "2"),
+            ("source_proposal_model_version", "3"),
+            ("status", "accepted"),
+            ("reason", "validated"),
+        ):
+            changed = deepcopy(artifact)
+            changed[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                require_proposal_presentation(changed)
+
+    def test_public_verifier_rejects_identity_and_display_tampering(self):
+        artifact = build_proposal_presentation(self.accepted())
+        mutations = []
+        for path, value in (
+            (("proposal_identity", "digest"), "0" * 64),
+            (("presentation_identity", "digest"), "0" * 64),
+            (("proposal_identity", "proposal_identity_version"), "2"),
+            (("presentation_identity", "presentation_identity_version"), "2"),
+            (("proposal_identity", "digest_algorithm"), "sha512"),
+            (("presentation_identity", "digest_algorithm"), "sha512"),
+            (("review_artifact", "proposal", "target_zone"), "sideboard"),
+            (("review_artifact", "proposal", "card", "name"), "Altered display"),
+            (("review_artifact", "validation", "evidence", "warnings"), [{
+                "code": "altered", "message": "Changed warning.",
+                "zone": None, "title_id": None,
+            }]),
+            (("review_artifact", "validation", "resource_mode_disclosure"), "unlimited"),
+            (("review_artifact", "limitations"), []),
+        ):
+            changed = deepcopy(artifact)
+            target = changed
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            mutations.append((path, changed))
+        for path, changed in mutations:
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                require_proposal_presentation(changed)
+
+    def test_public_verifier_rejects_rehashed_unrelated_result_and_provenance(self):
+        artifact = build_proposal_presentation(self.accepted())
+
+        def rehash(identity):
+            import hashlib
+            import json
+            identity["digest"] = hashlib.sha256(json.dumps(
+                identity["canonical_payload"], sort_keys=True,
+                separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")).hexdigest()
+
+        changed_result = deepcopy(artifact)
+        semantic = changed_result["proposal_identity"]["canonical_payload"]
+        result = semantic["resulting_deck_identity"]
+        result["canonical_payload"]["main"].append([301, 1])
+        rehash(result)
+        rehash(changed_result["proposal_identity"])
+
+        changed_baseline = deepcopy(artifact)
+        semantic = changed_baseline["proposal_identity"]["canonical_payload"]
+        baseline = semantic["source_baseline_deck_identity"]
+        baseline["canonical_payload"]["main"][0][1] += 1
+        rehash(baseline)
+        rehash(changed_baseline["proposal_identity"])
+
+        changed_policy = deepcopy(artifact)
+        semantic = changed_policy["proposal_identity"]["canonical_payload"]
+        semantic["recommendation_provenance"]["policy_id"] = "proposal.other.v1"
+        rehash(changed_policy["proposal_identity"])
+
+        changed_validation = deepcopy(artifact)
+        semantic = changed_validation["proposal_identity"]["canonical_payload"]
+        semantic["captured_validation_semantics"]["rules"]["max_main"] = 249
+        rehash(changed_validation["proposal_identity"])
+
+        for changed in (
+            changed_result, changed_baseline, changed_policy, changed_validation,
+        ):
+            with self.assertRaises(ValueError):
+                require_proposal_presentation(changed)
+
+    def test_public_verifier_rejects_top_level_nested_identity_swap(self):
+        artifact = build_proposal_presentation(self.accepted())
+        other = build_proposal_presentation(self.accepted(
+            policy_id="proposal.other.v1", policy_reference="test declaration",
+        ))
+        artifact["proposal_identity"] = other["proposal_identity"]
+        with self.assertRaises(ValueError):
+            require_proposal_presentation(artifact)
+
+    def test_public_verifier_rejects_removed_bound_warning(self):
+        source = self.accepted()
+        source["validation"]["warnings"] = [{
+            "code": "review_notice", "message": "Review this interaction.",
+            "zone": "main", "title_id": 1,
+        }]
+        artifact = build_proposal_presentation(source)
+        artifact["review_artifact"]["validation"]["evidence"]["warnings"] = []
+        with self.assertRaises(ValueError):
+            require_proposal_presentation(artifact)
+
+    def test_public_verifier_rejects_proposal_v2_directly(self):
+        with self.assertRaises(ValueError):
+            require_proposal_presentation(self.accepted())
 
 
 if __name__ == "__main__":

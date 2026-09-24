@@ -960,6 +960,51 @@ reconstruct the authorized delta, and revalidate under current execution context
 python -m unittest tests.test_proposal_presentation -v
 ```
 
+### Explicit human proposal decision (Pass #6K)
+
+Human Proposal Decision Model Version 1 records exactly one caller-supplied
+`approved` or `declined` decision about one complete Proposal Presentation Model
+Version 1 artifact. Call
+`services.human_proposal_decision.build_human_proposal_decision(presentation,
+decision_spec)` with an explicit decision and a source kind of `explicit_user`
+or `explicit_operator`, plus a non-empty caller-supplied provenance reference.
+There is no default decision, and neither `presentable` nor
+`validator_accepted` implies approval. `declined` is a successful decision
+record, not an error.
+
+The additive public
+`services.proposal_presentation.require_proposal_presentation(presentation)`
+verifier remains owned by #6J. It requires the complete closed Version 1 shape,
+recomputes Proposal Identity v1, Presentation Identity v1, and embedded Deck
+Snapshot Identity v1 digests, checks their canonical payloads, verifies that the
+resulting gameplay state is exactly the baseline plus the bound delta, and
+reconciles the review artifact, policy and recommendation provenance, captured
+validation semantics, warnings, disclosures, and limitations. Unknown versions,
+algorithms, fields, digest mismatches, identity swaps, and display or provenance
+changes fail closed.
+
+Human Proposal Decision Identity Version 1 is SHA-256 over deterministic
+canonical JSON containing the decision-model version, exact decision, normalized
+decision-source provenance, source presentation-model version, and the complete
+verified Proposal and Presentation identities. Dictionary insertion order,
+timestamps, UI formatting, and storage location are excluded. Repeating the same
+explicit decision and provenance for the same presentation may therefore produce
+the same identity. The complete verified source presentation is retained by value
+for review traceability without duplicating its delta, baseline, result, or
+warnings as independent fields.
+
+Pass #6K is in-memory and historical only. Its digest is mismatch detection, not
+authentication, a signature, consent proof, legal identity, non-repudiation, or
+an authorization token. Even `approved` does not establish that the Deck,
+format, rules, database, validator, collection, or wildcard state remains current;
+does not authorize resources; and does not authorize application or execution.
+This boundary does not mutate, persist, export, apply, validate, query a database,
+or rerun proposal or recommendation work.
+
+```powershell
+python -m unittest tests.test_proposal_presentation tests.test_human_proposal_decision -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
