@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 
-PROPOSAL_POLICY_MODEL_VERSION = "1"
+PROPOSAL_POLICY_MODEL_VERSION = "2"
 _SOURCE_KINDS = frozenset({"explicit_user", "explicit_operator_profile"})
 _ZONES = frozenset({"main", "sideboard", "commander"})
 _SPEC_FIELDS = frozenset({
@@ -33,7 +33,7 @@ def _text(value: Any, label: str) -> str:
 
 def _fixed(value: Any, expected: str, label: str) -> str:
     if type(value) is not str or value != expected:
-        raise ValueError(f"{label} is unsupported by Proposal Policy v1")
+        raise ValueError(f"{label} is unsupported by Proposal Policy v2")
     return value
 
 
@@ -44,7 +44,7 @@ def _zone(value: Any, label: str) -> str:
 
 
 def build_proposal_policy(policy_spec: dict) -> dict:
-    """Normalize one explicit V1 proposal-shape policy; grant no deck validity."""
+    """Normalize one explicit V2 proposal-shape policy; grant no deck validity."""
     spec = _mapping(policy_spec, "proposal policy", _SPEC_FIELDS)
     source = _mapping(
         spec["policy_source"], "proposal policy source",
@@ -61,11 +61,11 @@ def build_proposal_policy(policy_spec: dict) -> dict:
         frozenset({"zone", "finding_id", "dependency_id"}),
     )
     if type(spec["quantity"]) is not int or spec["quantity"] != 1:
-        raise ValueError("Proposal Policy v1 permits exactly one added copy")
+        raise ValueError("Proposal Policy v2 permits exactly one added copy")
 
     return {
         "proposal_policy_model_version": PROPOSAL_POLICY_MODEL_VERSION,
-        "required_recommendation_context_model_version": "1",
+        "required_recommendation_context_model_version": "2",
         "policy_id": _text(spec["policy_id"], "proposal policy ID"),
         "policy_source": {
             "kind": source["kind"],

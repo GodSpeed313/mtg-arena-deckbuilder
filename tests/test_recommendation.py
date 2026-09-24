@@ -42,7 +42,7 @@ class RecommendationDecisionTests(unittest.TestCase):
         model = ordering([rule()])
         result = build_recommendation_decisions(model)
         life = decision(result)
-        self.assertEqual(RECOMMENDATION_DECISION_MODEL_VERSION, "1")
+        self.assertEqual(RECOMMENDATION_DECISION_MODEL_VERSION, "2")
         self.assertEqual(life["outcome"], "recommendable")
         self.assertEqual(life["candidate"]["title_id"], 1)
         self.assertEqual(life["ordered_first_group"], [1])
@@ -156,7 +156,7 @@ class RecommendationDecisionTests(unittest.TestCase):
         positive = decision(build_recommendation_decisions(ordering([rule()])))
         self.assertEqual(positive["reason"], "unique_first_under_explicit_policy")
         self.assertEqual(positive["policy_id"], "policy.test.v1")
-        self.assertEqual(positive["ordering_model_version"], "1")
+        self.assertEqual(positive["ordering_model_version"], "2")
         self.assertIn("need_matrices[need_key=main|", positive["source_need_reference"])
         self.assertEqual({item["decisive_policy_rule_id"]
                           for item in positive["relation_evidence"]},
@@ -184,7 +184,7 @@ class RecommendationDecisionTests(unittest.TestCase):
                       "source_strategic_fit_model_version",
                       "source_strategic_preference_policy_model_version"):
             bad = deepcopy(original)
-            bad[field] = "2"
+            bad[field] = "1"
             with self.subTest(field=field), self.assertRaises(ValueError):
                 build_recommendation_decisions(bad)
         bad = deepcopy(original)

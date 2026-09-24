@@ -4,8 +4,10 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from mtgadb.deck_identity import require_deck_snapshot_identity
 
-RECOMMENDATION_CONTEXT_MODEL_VERSION = "1"
+
+RECOMMENDATION_CONTEXT_MODEL_VERSION = "2"
 _ZONES = {"main": 0, "sideboard": 1, "commander": 2}
 _OUTCOMES = frozenset({
     "recommendable", "top_tie", "indeterminate_ordering",
@@ -201,24 +203,28 @@ def build_recommendation_context(decisions: dict, comparison: dict) -> dict:
     """Attach #6A facts to #6E decisions without changing their outcomes."""
     decisions = _mapping(decisions, "recommendation decisions")
     comparison = _mapping(comparison, "candidate comparison")
-    if decisions.get("recommendation_decision_model_version") != "1":
-        raise ValueError("Recommendation Decision Model Version 1 is required")
-    if comparison.get("candidate_comparison_model_version") != "1":
-        raise ValueError("Candidate Comparison Model Version 1 is required")
+    if decisions.get("recommendation_decision_model_version") != "2":
+        raise ValueError("Recommendation Decision Model Version 2 is required")
+    if comparison.get("candidate_comparison_model_version") != "2":
+        raise ValueError("Candidate Comparison Model Version 2 is required")
     for field in ("source_candidate_ordering_model_version",
                   "source_candidate_comparison_model_version",
                   "source_strategic_fit_model_version",
                   "source_strategic_preference_policy_model_version"):
-        if decisions.get(field) != "1":
+        if decisions.get(field) != "2":
             raise ValueError("recommendation source model version is unsupported")
-    for field, expected in (("source_candidate_facts_model_version", "2"),
-                            ("source_candidate_model_version", "2"),
+    for field, expected in (("source_candidate_facts_model_version", "3"),
+                            ("source_candidate_model_version", "3"),
                             ("functional_package_model_version", "1")):
         if comparison.get(field) != expected:
             raise ValueError("comparison source model version is unsupported")
     policy_id = decisions.get("policy_id")
     if not isinstance(policy_id, str) or not policy_id:
         raise ValueError("recommendation policy ID is malformed")
+    source_context = _mapping(comparison.get("source_context"), "source context")
+    analyzed_deck_identity = require_deck_snapshot_identity(
+        source_context.get("analyzed_deck_identity")
+    )
 
     titles = {}
     for title in _list(comparison.get("title_index"), "comparison title index"):
@@ -294,13 +300,14 @@ def build_recommendation_context(decisions: dict, comparison: dict) -> dict:
         })
     return {
         "recommendation_context_model_version": RECOMMENDATION_CONTEXT_MODEL_VERSION,
-        "source_recommendation_decision_model_version": "1",
-        "source_candidate_ordering_model_version": "1",
-        "source_strategic_fit_model_version": "1",
-        "source_strategic_preference_policy_model_version": "1",
-        "source_candidate_comparison_model_version": "1",
-        "source_candidate_facts_model_version": "2",
-        "source_candidate_model_version": "2",
+        "analyzed_deck_identity": analyzed_deck_identity,
+        "source_recommendation_decision_model_version": "2",
+        "source_candidate_ordering_model_version": "2",
+        "source_strategic_fit_model_version": "2",
+        "source_strategic_preference_policy_model_version": "2",
+        "source_candidate_comparison_model_version": "2",
+        "source_candidate_facts_model_version": "3",
+        "source_candidate_model_version": "3",
         "functional_package_model_version": "1",
         "policy_id": policy_id,
         "contexts": contexts,

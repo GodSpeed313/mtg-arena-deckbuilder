@@ -10,8 +10,8 @@ from math import isfinite
 from typing import Any
 
 
-RECOMMENDATION_DECISION_MODEL_VERSION = "1"
-_ORDERING_VERSION = "1"
+RECOMMENDATION_DECISION_MODEL_VERSION = "2"
+_ORDERING_VERSION = "2"
 _ZONES = {"main": 0, "sideboard": 1, "commander": 2}
 _POOL_STATUSES = frozenset({
     "policy_not_applicable", "no_declared_preference", "insufficient_candidates",
@@ -83,7 +83,7 @@ def _validate_trace(pair: dict) -> None:
         expected_locator = ("field_path" if source.get("model") == "candidate_comparison"
                             else "signal_id")
         if (source.get("model") not in {"candidate_comparison", "strategic_fit"}
-            or source.get("version") != "1"
+            or source.get("version") != "2"
             or set(source) != {"model", "version", expected_locator}
             or not isinstance(source[expected_locator], str)
             or not source[expected_locator]):
@@ -328,13 +328,13 @@ def _decision(pool: dict, candidates: list[dict], pairs: list[dict],
 
 
 def build_recommendation_decisions(ordering: dict) -> dict:
-    """Decide unique-first status from a complete Candidate Ordering v1 model."""
-    if not isinstance(ordering, dict) or ordering.get("candidate_ordering_model_version") != "1":
-        raise ValueError("Candidate Ordering Model Version 1 is required")
+    """Decide unique-first status from a complete Candidate Ordering v2 model."""
+    if not isinstance(ordering, dict) or ordering.get("candidate_ordering_model_version") != "2":
+        raise ValueError("Candidate Ordering Model Version 2 is required")
     for field in ("source_candidate_comparison_model_version",
                   "source_strategic_fit_model_version",
                   "source_strategic_preference_policy_model_version"):
-        if ordering.get(field) != "1":
+        if ordering.get(field) != "2":
             raise ValueError("ordering source model versions are unsupported")
     policy_id = ordering.get("policy_id")
     if not isinstance(policy_id, str) or not policy_id:
@@ -369,9 +369,9 @@ def build_recommendation_decisions(ordering: dict) -> dict:
     return {
         "recommendation_decision_model_version": RECOMMENDATION_DECISION_MODEL_VERSION,
         "source_candidate_ordering_model_version": _ORDERING_VERSION,
-        "source_candidate_comparison_model_version": "1",
-        "source_strategic_fit_model_version": "1",
-        "source_strategic_preference_policy_model_version": "1",
+        "source_candidate_comparison_model_version": "2",
+        "source_strategic_fit_model_version": "2",
+        "source_strategic_preference_policy_model_version": "2",
         "policy_id": policy_id,
         "decisions": decisions,
         "limitations": [

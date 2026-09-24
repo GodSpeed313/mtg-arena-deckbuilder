@@ -11,18 +11,20 @@ from copy import deepcopy
 import sqlite3
 
 from mtgadb import canonical
+from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snapshot_identity
 from mtgadb.model import Collection, Deck
 from mtgadb.query import CardQueryEngine
 from services.intelligence import classify_card
 from services.validator import card_copy_limit
 
 
-CANDIDATE_MODEL_VERSION = "2"
+CANDIDATE_MODEL_VERSION = "3"
 
 
 def _output(
     pools: list[dict],
     *,
+    analyzed_deck_identity: dict,
     format_name: str | None,
     allowed_colors: frozenset[str] | None,
     collection: Collection | None,
@@ -30,6 +32,7 @@ def _output(
 ) -> dict:
     return {
         "candidate_model_version": CANDIDATE_MODEL_VERSION,
+        "analyzed_deck_identity": deepcopy(analyzed_deck_identity),
         "trigger_finding_type": "support_need",
         "format_context": format_name,
         "color_identity_context": (
@@ -143,8 +146,13 @@ def discover_candidates(
     limit_per_need: int | None = None,
 ) -> dict:
     """Return neutral per-need candidate pools without mutating inputs or data."""
-    if analysis.get("needs_model_version") != "2":
-        raise ValueError("candidate discovery requires needs model version 2")
+    if analysis.get("analysis_version") != "4" or analysis.get("needs_model_version") != "2":
+        raise ValueError("candidate discovery requires analysis version 4 and needs version 2")
+    analyzed_deck_identity = require_deck_snapshot_identity(
+        analysis.get("analyzed_deck_identity")
+    )
+    if build_deck_snapshot_identity(deck) != analyzed_deck_identity:
+        raise ValueError("candidate discovery Deck differs from analyzed Deck snapshot")
     if limit_per_need is not None and (
         type(limit_per_need) is not int or limit_per_need <= 0
     ):
@@ -157,6 +165,7 @@ def discover_candidates(
     if not sources:
         return _output(
             [],
+            analyzed_deck_identity=analyzed_deck_identity,
             format_name=format.name if format else None,
             allowed_colors=allowed_colors,
             collection=collection,
@@ -331,6 +340,7 @@ def discover_candidates(
 
     return _output(
         pools,
+        analyzed_deck_identity=analyzed_deck_identity,
         format_name=format.name if format else None,
         allowed_colors=allowed_colors,
         collection=collection,

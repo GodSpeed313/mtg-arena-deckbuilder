@@ -221,7 +221,7 @@ class DependencyAnalysisTests(unittest.TestCase):
             sideboard={301: 2},
             commander={401: 1},
         ), self.con)
-        self.assertEqual(result["analysis_version"], "3")
+        self.assertEqual(result["analysis_version"], "4")
         self.assertEqual(result["dependency_model_version"], "2")
         self.assertEqual(
             next(item for item in result["zones"]["main"]["dependencies"]

@@ -114,11 +114,15 @@ class CandidateFactsTests(unittest.TestCase):
         _, pools = self.candidates()
         first = derive_candidate_facts(pools, self.con)
         second = derive_candidate_facts(pools, self.con)
-        self.assertEqual(CANDIDATE_FACTS_MODEL_VERSION, "2")
+        self.assertEqual(CANDIDATE_FACTS_MODEL_VERSION, "3")
         self.assertEqual(first, second)
-        self.assertEqual(first["candidate_facts_model_version"], "2")
-        self.assertEqual(first["source_candidate_model_version"], "2")
+        self.assertEqual(first["candidate_facts_model_version"], "3")
+        self.assertEqual(first["source_candidate_model_version"], "3")
         self.assertEqual(first["functional_package_model_version"], "1")
+        self.assertEqual(
+            first["source_context"]["analyzed_deck_identity"],
+            pools["analyzed_deck_identity"],
+        )
         self.assertEqual(
             first["candidate_title_count"], len(first["candidate_facts_by_title"])
         )

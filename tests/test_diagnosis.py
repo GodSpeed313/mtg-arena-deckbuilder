@@ -436,7 +436,7 @@ class DiagnosisTests(unittest.TestCase):
         for expected, deck in decks.items():
             with self.subTest(plan=expected):
                 report = diagnose_analysis(analyze_deck(deck, con))
-                self.assertEqual(report["analysis_version"], "3")
+                self.assertEqual(report["analysis_version"], "4")
                 self.assertEqual(report["status"], "diagnosed")
                 self.assertEqual(report["plan"]["probable_plan"], expected)
 

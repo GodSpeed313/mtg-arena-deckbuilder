@@ -7,6 +7,7 @@ import re
 import sqlite3
 
 from mtgadb.model import Card, Deck
+from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.query import CardQueryEngine
 from services.abilities import Ability, decompose_abilities
 from services.dependencies import (
@@ -20,7 +21,7 @@ from services.packages import (
     FUNCTIONAL_PACKAGES, PACKAGE_MODEL_VERSION, functional_package_contributions,
 )
 
-VERSION = "3"
+VERSION = "4"
 ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
          "counterspell", "protection", "recursion", "threat")
 THEMES = ("tokens", "counters", "lifegain", "sacrifice", "graveyard", "typal", "spells",
@@ -534,6 +535,7 @@ def interactions(cards: list[dict]) -> list[dict]:
 
 def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
     """Analyze zones independently; interactions/primary totals concern main only."""
+    deck_identity = build_deck_snapshot_identity(deck)
     engine = CardQueryEngine(con)
     zones = {}
     for zone_name in ("main", "sideboard", "commander"):
@@ -631,6 +633,7 @@ def analyze_deck(deck: Deck, con: sqlite3.Connection) -> dict:
                                 rules_text_coverage=rules_text_coverage,
                                 coverage=zone_coverage)
     return dict(analysis_version=VERSION,
+                analyzed_deck_identity=deck_identity,
                 functional_package_model_version=PACKAGE_MODEL_VERSION,
                 dependency_model_version=DEPENDENCY_MODEL_VERSION,
                 needs_model_version=NEEDS_MODEL_VERSION,

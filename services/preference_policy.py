@@ -12,8 +12,8 @@ from typing import Any
 from services.packages import FUNCTIONAL_PACKAGES
 
 
-STRATEGIC_PREFERENCE_POLICY_MODEL_VERSION = "1"
-PREFERENCE_RULE_REGISTRY_VERSION = "1"
+STRATEGIC_PREFERENCE_POLICY_MODEL_VERSION = "2"
+PREFERENCE_RULE_REGISTRY_VERSION = "2"
 
 _POLICY_SOURCE_KINDS = frozenset({"explicit_user", "explicit_operator_profile"})
 _UNKNOWN_BEHAVIORS = frozenset({"indeterminate", "equal_for_this_rule"})
@@ -53,98 +53,98 @@ class PreferenceCriterion:
 PREFERENCE_CRITERIA = (
     PreferenceCriterion(
         "criterion.need.observed_match_count.v1",
-        "candidate_comparison", "1", "field_path",
+        "candidate_comparison", "2", "field_path",
         "title_index.need_coverage.matched_need_count", "integer",
         ("prefer_lower", "prefer_higher"), "none",
         "The number of structured observed needs matched by a title.",
     ),
     PreferenceCriterion(
         "criterion.mana.value.v1",
-        "candidate_comparison", "1", "field_path",
+        "candidate_comparison", "2", "field_path",
         "title_index.canonical_facts.mana_value", "number",
         ("prefer_lower", "prefer_higher"), "none",
-        "The canonical mana value reported by Candidate Comparison Model Version 1.",
+        "The canonical mana value reported by Candidate Comparison Model Version 2.",
     ),
     PreferenceCriterion(
         "criterion.package.named_presence.v1",
-        "candidate_comparison", "1", "field_path",
+        "candidate_comparison", "2", "field_path",
         "title_index.package_ids", "named_package_presence",
         ("prefer_present", "prefer_absent"), "package_id",
         "Whether a specifically named reviewed functional package is present.",
     ),
     PreferenceCriterion(
         "criterion.package.count.v1",
-        "candidate_comparison", "1", "field_path",
+        "candidate_comparison", "2", "field_path",
         "title_index.package_ids", "integer",
         ("prefer_lower", "prefer_higher"), "none",
         "The number of distinct reviewed functional-package IDs on a title.",
     ),
     PreferenceCriterion(
         "criterion.support.unconditional_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.support.unconditional.v1",
+        "strategic_fit", "2", "signal_id", "fit.support.unconditional.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of an unconditional reviewed support path for the current need.",
     ),
     PreferenceCriterion(
         "criterion.support.prerequisites_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.support.prerequisites_present.v1",
+        "strategic_fit", "2", "signal_id", "fit.support.prerequisites_present.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of explicit prerequisites on reviewed support for the current need.",
     ),
     PreferenceCriterion(
         "criterion.support.conditional_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.support.conditional.v1",
+        "strategic_fit", "2", "signal_id", "fit.support.conditional.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of a conditional reviewed support path for the current need.",
     ),
     PreferenceCriterion(
         "criterion.support.triggered_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.support.triggered.v1",
+        "strategic_fit", "2", "signal_id", "fit.support.triggered.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of a triggered reviewed support path for the current need.",
     ),
     PreferenceCriterion(
         "criterion.support.activated_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.support.activated.v1",
+        "strategic_fit", "2", "signal_id", "fit.support.activated.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of an activated reviewed support path for the current need.",
     ),
     PreferenceCriterion(
         "criterion.support.partial_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.support.partial.v1",
+        "strategic_fit", "2", "signal_id", "fit.support.partial.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of a partially represented reviewed support path.",
     ),
     PreferenceCriterion(
         "criterion.support.unsupported_remainder_presence.v1",
-        "strategic_fit", "1", "signal_id",
+        "strategic_fit", "2", "signal_id",
         "fit.support.unsupported_remainder_present.v1", "signal_presence",
         ("prefer_present", "prefer_absent"), "none",
         "Presence of an unsupported remainder on reviewed support evidence.",
     ),
     PreferenceCriterion(
         "criterion.eligibility.unresolved_presence.v1",
-        "strategic_fit", "1", "signal_id",
+        "strategic_fit", "2", "signal_id",
         "fit.eligibility.unresolved_dimensions_present.v1", "signal_presence",
         ("prefer_present", "prefer_absent"), "none",
         "Presence of explicitly tracked unresolved eligibility dimensions.",
     ),
     PreferenceCriterion(
         "criterion.ownership.known_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.ownership.known.v1",
+        "strategic_fit", "2", "signal_id", "fit.ownership.known.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of a known recorded ownership count.",
     ),
     PreferenceCriterion(
         "criterion.copy.finite_capacity_presence.v1",
-        "strategic_fit", "1", "signal_id",
+        "strategic_fit", "2", "signal_id",
         "fit.copy.remaining_capacity_positive.v1", "signal_presence",
         ("prefer_present", "prefer_absent"), "none",
         "Presence of positive finite remaining copy capacity.",
     ),
     PreferenceCriterion(
         "criterion.copy.unlimited_presence.v1",
-        "strategic_fit", "1", "signal_id", "fit.copy.unlimited.v1",
+        "strategic_fit", "2", "signal_id", "fit.copy.unlimited.v1",
         "signal_presence", ("prefer_present", "prefer_absent"), "none",
         "Presence of unlimited recorded copy capacity.",
     ),

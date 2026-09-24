@@ -9,13 +9,14 @@ from __future__ import annotations
 from copy import deepcopy
 import sqlite3
 
+from mtgadb.deck_identity import require_deck_snapshot_identity
 from mtgadb.query import CardQueryEngine
 from services.candidates import CANDIDATE_MODEL_VERSION
 from services.intelligence import classify_card
 from services.packages import PACKAGE_MODEL_VERSION
 
 
-CANDIDATE_FACTS_MODEL_VERSION = "2"
+CANDIDATE_FACTS_MODEL_VERSION = "3"
 
 _ELIGIBILITY_STATUSES = frozenset({"eligible", "eligibility_unknown"})
 
@@ -171,10 +172,13 @@ def _validate_candidate(
 def derive_candidate_facts(
     candidate_pools: dict, con: sqlite3.Connection,
 ) -> dict:
-    """Enrich returned Version 2 candidates without rediscovery or mutation."""
+    """Enrich returned Version 3 candidates without rediscovery or mutation."""
     source_output = _require_mapping(candidate_pools, "candidate pool")
     if source_output.get("candidate_model_version") != CANDIDATE_MODEL_VERSION:
-        raise ValueError("candidate facts require candidate model version 2")
+        raise ValueError("candidate facts require candidate model version 3")
+    analyzed_deck_identity = require_deck_snapshot_identity(
+        source_output.get("analyzed_deck_identity")
+    )
     if any(key not in source_output for key in (
         "trigger_finding_type",
         "format_context",
@@ -185,7 +189,7 @@ def derive_candidate_facts(
         "ordering",
         "limitations",
     )):
-        raise ValueError("candidate pool is missing Version 2 context")
+        raise ValueError("candidate pool is missing Version 3 context")
     if source_output.get("trigger_finding_type") != "support_need":
         raise ValueError("unsupported candidate-pool trigger semantics")
     pools = source_output.get("pools")
@@ -326,6 +330,7 @@ def derive_candidate_facts(
         "functional_package_model_version": PACKAGE_MODEL_VERSION,
         "candidate_title_count": len(by_title),
         "source_context": {
+            "analyzed_deck_identity": analyzed_deck_identity,
             "trigger_finding_type": source_output.get("trigger_finding_type"),
             "format_context": source_output.get("format_context"),
             "color_identity_context": source_output.get("color_identity_context"),

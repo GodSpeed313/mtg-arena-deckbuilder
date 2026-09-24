@@ -41,7 +41,7 @@ class CandidateOrderingTests(unittest.TestCase):
     def test_opposite_mana_policies_reverse_precedence(self):
         lower = pair(pool(order(*inputs([rule(direction="prefer_lower")]))))
         higher = pair(pool(order(*inputs([rule(direction="prefer_higher")]))))
-        self.assertEqual(CANDIDATE_ORDERING_MODEL_VERSION, "1")
+        self.assertEqual(CANDIDATE_ORDERING_MODEL_VERSION, "2")
         self.assertEqual(lower["preceding_title_id"], 1)
         self.assertEqual(higher["preceding_title_id"], 2)
         self.assertEqual(lower["status"], higher["status"])
@@ -193,15 +193,15 @@ class CandidateOrderingTests(unittest.TestCase):
     def test_malformed_versions_identity_and_eligibility_rejected(self):
         c, f, p = inputs([rule()])
         bad = deepcopy(c)
-        bad["candidate_comparison_model_version"] = "2"
+        bad["candidate_comparison_model_version"] = "1"
         with self.assertRaises(ValueError):
             order(bad, f, p)
         bad = deepcopy(f)
-        bad["strategic_fit_model_version"] = "2"
+        bad["strategic_fit_model_version"] = "1"
         with self.assertRaises(ValueError):
             order(c, bad, p)
         bad = deepcopy(p)
-        bad["strategic_preference_policy_model_version"] = "2"
+        bad["strategic_preference_policy_model_version"] = "1"
         with self.assertRaises(ValueError):
             order(c, f, bad)
         bad = deepcopy(p)
@@ -224,8 +224,8 @@ class CandidateOrderingTests(unittest.TestCase):
             first = order(*arguments)
             self.assertEqual(first, order(*arguments))
         self.assertEqual(arguments, original)
-        self.assertEqual(first["candidate_ordering_model_version"], "1")
-        self.assertEqual(first["source_strategic_preference_policy_model_version"], "1")
+        self.assertEqual(first["candidate_ordering_model_version"], "2")
+        self.assertEqual(first["source_strategic_preference_policy_model_version"], "2")
 
     def test_no_hidden_decision_or_deck_fields(self):
         result = order(*inputs([rule()]))

@@ -288,12 +288,20 @@ not read the live log or retain real account/deck/request identifiers or names.
 python workbench.py analyze-deck examples/sample_deck.txt
 ```
 
-This read-only command returns analysis Version 3 JSON with separate main, sideboard and
+This read-only command returns analysis Version 4 JSON with separate main, sideboard and
 commander reports: land count, quantity-weighted nonland mana curve, card features,
 role/theme copy counts, decomposed abilities, rules-text coverage, unsupported text
 and main-deck interactions. Import errors
 return exit code 2 without analyzing a silently truncated deck. Successful analysis
 returns 0 and `legality: not_evaluated`; use `validate` separately for legality.
+
+Analysis Version 4 also records Deck Snapshot Identity Version 1. The identity is a
+SHA-256 digest over canonical JSON containing exactly the `main`, `sideboard`, and
+`commander` zones as sorted `[Arena printing ID, quantity]` pairs. Printing IDs and
+quantities must be positive integers. Dictionary insertion order, `deck_id`, deck name,
+format, collection, and resource state are excluded. This is a gameplay-state
+fingerprint, not an account or saved-deck identifier. Malformed zones and tampered
+identity records fail closed.
 
 Each feature carries a stable rule ID, exact evidence, relationship and explanation.
 Counts count each card copy once per label even when multiple rules support it;
@@ -455,9 +463,12 @@ heuristics, scores, candidate search, comparisons, or recommendations.
 
 ### Deterministic candidate pool (Pass #5D)
 
-Candidate model Version 2 is an explicit, read-only service layered after deck
+Candidate model Version 3 is an explicit, read-only service layered after deck
 analysis. Call `services.candidates.discover_candidates(analysis, deck, con, ...)`
-with an analysis containing Version 2 needs and the canonical database connection.
+with a Version 4 analysis containing Version 2 needs and the canonical database
+connection. Candidate discovery requires the supplied Deck to have the same canonical
+gameplay-state identity as the Deck analyzed by Version 4; it does not recompute an
+identity from downstream candidate data.
 Database-wide discovery is not run by ordinary `analyze-deck`, so its cost is paid
 only when candidate retrieval is requested.
 
@@ -511,10 +522,10 @@ card that could support a need.
 
 ### Deterministic candidate facts (Pass #5E)
 
-Candidate Facts Model Version 2 is the final deterministic evidence-aggregation
+Candidate Facts Model Version 3 is the final deterministic evidence-aggregation
 layer before future strategic judgment. Call
 `services.candidate_facts.derive_candidate_facts(candidate_pools, con)` with Pass
-#5D Version 2 output and the canonical database connection. It does not run during
+#5D Version 3 output and the canonical database connection. It does not run during
 ordinary `analyze-deck`, rediscover needs or candidates, or change eligibility.
 
 The service classifies only the unique titles actually returned by #5D, rather
@@ -546,7 +557,7 @@ do not assign strategic value to those facts. A candidate matching multiple need
 or contributing to multiple functional packages is not automatically better than
 a candidate matching fewer. Strategic evaluation belongs to a later layer.
 
-Version 2 adds no scoring, ranking, comparison, recommendation, replacement, deck
+Version 3 adds no scoring, ranking, comparison, recommendation, replacement, deck
 mutation, candidate rediscovery, eligibility reinterpretation, ownership or
 crafting inference, diagnosis change, or new rules-text interpretation. Unsupported
 capabilities remain absent even when a human player would recognize them.
@@ -561,7 +572,7 @@ is performed. Analysis never changes the database or validator rules.
 
 ### Deterministic candidate comparison facts (Pass #6A)
 
-Candidate Comparison Model Version 1 consumes Candidate Facts Model Version 2
+Candidate Comparison Model Version 2 consumes Candidate Facts Model Version 3
 without a database connection. Call
 `services.candidate_comparison.build_candidate_comparisons(candidate_facts)` to
 produce a normalized title index and per-need comparison matrices. Canonical
@@ -586,9 +597,9 @@ not claim global uniqueness. An individual pair can be projected explicitly with
 `compare_candidate_pair(...)`; the primary model never materializes every possible
 pair.
 
-Candidate Facts Version 2 does not carry the original zone-level evidence boundary,
+Candidate Facts Version 3 does not carry the original zone-level evidence boundary,
 so comparison output reports that completeness as `unknown` with reason
-`source_evidence_boundary_not_present_in_candidate_facts_v2`. Feature-level partial
+`source_evidence_boundary_not_present_in_candidate_facts_v3`. Feature-level partial
 and unsupported evidence remains visible. Truncated pools remain marked as
 truncated, and comparisons cover only returned candidates.
 
@@ -602,8 +613,8 @@ python -m unittest tests.test_candidate_comparison -v
 
 ### Deterministic strategic-fit signals (Pass #6B)
 
-Strategic Fit Model Version 1 consumes only the complete Candidate Comparison
-Model Version 1. Call
+Strategic Fit Model Version 2 consumes only the complete Candidate Comparison
+Model Version 2. Call
 `services.strategic_fit.build_strategic_fit_signals(candidate_comparison)` to
 derive named, registry-driven interpretations from already-reviewed comparison
 facts. It rejects pair projections and does not query the database, parse rules
@@ -631,7 +642,7 @@ not established. The model does not evaluate mana position, castability, curve
 fit, package sufficiency, ownership or crafting desirability, or card strength.
 It does not select, compare strategically, recommend, replace, optimize, or
 mutate anything. A returned candidate with zero or negative finite copy capacity
-is rejected as contradictory to Candidate Model Version 2 rather than converted
+is rejected as contradictory to Candidate Model Version 3 rather than converted
 into a signal.
 
 ```powershell
@@ -640,15 +651,15 @@ python -m unittest tests.test_strategic_fit -v
 
 ### Strategic preference policy (Pass #6C)
 
-Strategic Preference Policy Model Version 1 records explicit policy without
+Strategic Preference Policy Model Version 2 records explicit policy without
 ordering candidates. Call
 `services.preference_policy.build_preference_policy(policy_spec)` to validate
-and normalize a caller-declared lexicographic policy. Version 1 accepts only an
+and normalize a caller-declared lexicographic policy. Version 2 accepts only an
 `explicit_user` or `explicit_operator_profile` source with provenance. It does
 not infer objectives from a deck, archetype, account, or candidate pool.
 
 The reviewed criterion registry references only Candidate Comparison Model
-Version 1 fields and Strategic Fit Model Version 1 signal IDs. It includes
+Version 2 fields and Strategic Fit Model Version 2 signal IDs. It includes
 observed-need count, mana value, named-package presence, package count, selected
 support-context signal presence, unresolved-eligibility presence, known-
 ownership presence, and finite or unlimited copy-capacity presence. Criteria
@@ -670,9 +681,9 @@ python -m unittest tests.test_preference_policy -v
 
 ### Deterministic lexicographic candidate ordering (Pass #6D)
 
-Candidate Ordering Model Version 1 consumes complete Candidate Comparison Model
-Version 1, Strategic Fit Model Version 1, and a normalized Strategic Preference
-Policy Model Version 1. Call
+Candidate Ordering Model Version 2 consumes complete Candidate Comparison Model
+Version 2, Strategic Fit Model Version 2, and a normalized Strategic Preference
+Policy Model Version 2. Call
 `services.candidate_ordering.build_candidate_ordering(comparison, fit, policy)`.
 The builder validates that the fit signals agree with the comparison facts and
 that the policy is an explicit, reviewed #6C policy. It does not access a database.
@@ -713,8 +724,8 @@ python -m unittest tests.test_candidate_ordering -v
 
 ### Recommendation decision model (Pass #6E)
 
-Recommendation Decision Model Version 1 consumes only a complete Candidate
-Ordering Model Version 1. Call
+Recommendation Decision Model Version 2 consumes only a complete Candidate
+Ordering Model Version 2. Call
 `services.recommendation.build_recommendation_decisions(ordering)` to obtain one
 read-only decision per structured need. It uses the pair relationships and
 provenance already emitted by #6D; it does not evaluate preference rules again,
@@ -745,7 +756,7 @@ machine-readable reason and applicable pair or eligibility evidence. The
 output is deterministic and leaves its input unchanged.
 
 `recommendable` means only that the explicit policy uniquely preferred this
-candidate within its returned need pool. Recommendation Decision v1 does not
+candidate within its returned need pool. Recommendation Decision v2 does not
 mutate the deck or determine replacement quantities. It also does not select a
 card to remove, spend wildcards, validate a proposed deck, or add CLI/UI behavior.
 
@@ -755,9 +766,9 @@ python -m unittest tests.test_recommendation -v
 
 ### Recommendation context model (Pass #6F)
 
-Recommendation Context Model Version 1 is a read-only evidence bridge. Call
+Recommendation Context Model Version 2 is a read-only evidence bridge. Call
 `services.recommendation_context.build_recommendation_context(decisions, comparison)`
-with Recommendation Decision Model v1 and Candidate Comparison Model v1 outputs.
+with Recommendation Decision Model v2 and Candidate Comparison Model v2 outputs.
 It reconciles structured need keys, canonical title identities, returned-pool
 membership, source references, and model versions, failing closed on
 contradictions. It neither rediscovers candidates nor revisits strategic fit,
@@ -788,7 +799,8 @@ claim that no unseen candidate could outrank the returned first candidate.
 Negative #6E decisions are carried unchanged, with no candidate resurrected
 from comparison facts. Version fields, policy source, relation evidence, and
 source paths preserve provenance back through #6E–#6A to candidate and need
-evidence.
+evidence. The analyzed Deck identity is copied from #6A into the top-level context
+and every per-need source context; it is not reconstructed from candidate facts.
 
 #6F selects no quantity, removal, replacement, printing, or crafting action;
 it makes no deck change or legality conclusion and adds no CLI/UI behavior.
@@ -800,7 +812,7 @@ python -m unittest tests.test_recommendation_context -v
 ### Proposal policy model (Pass #6G)
 
 A #6F recommendation is strategic evidence, not permission to edit a deck.
-Proposal Policy Model Version 1 records separate, explicit authority for a
+Proposal Policy Model Version 2 records separate, explicit authority for a
 narrow future proposal shape. Call
 `services.proposal_policy.build_proposal_policy(policy_spec)` with a complete
 caller declaration. It accepts only `explicit_user` or
@@ -810,14 +822,14 @@ Empty, partial, inferred, and free-form policies are rejected.
 
 The declaration names exactly one structured `need_key` and an independent,
 explicit `target_zone` (`main`, `sideboard`, or `commander`). A source need's
-zone is not presumed to be the desired edit zone. All V1 fields are mandatory:
+zone is not presumed to be the desired edit zone. All V2 fields are mandatory:
 `recommendation_requirement: recommendable`,
 `candidate_pool_requirement: complete_only`,
 `eligibility_requirement: resolved`,
 `printing_requirement: single_eligible_printing`, `operation: add_only`,
 `quantity: 1`, and `resource_mode: unlimited`. These declared gates require
 #6H to abstain on negative #6E outcomes, truncated pools, unresolved
-eligibility, or multiple eligible printings. V1 excludes swaps, removals,
+eligibility, or multiple eligible printings. V2 excludes swaps, removals,
 dynamic quantities, owned-only and wildcard-budget modes, crafting, and
 wildcard spending. The policy does not choose a printing; it requires that
 the future #6H application find exactly one eligible printing.
@@ -831,7 +843,7 @@ alone is neither evidence of a deck slot nor a valid proposed deck. Policy ID,
 source provenance, model version, and required #6F version remain available
 for a future proposal trace distinct from #6E's strategic preference trace.
 
-Proposal Policy v1 authorizes a narrowly defined proposal shape. It does not
+Proposal Policy v2 authorizes a narrowly defined proposal shape. It does not
 construct, validate, apply, or save a deck change. It makes no removal,
 replacement, crafting, or printing choice and adds no CLI/UI behavior.
 
@@ -841,21 +853,25 @@ python -m unittest tests.test_proposal_policy -v
 
 ### Proposal construction and validation (Pass #6H)
 
-Proposal Model Version 1 applies one normalized #6G policy to one matching #6F
+Proposal Model Version 2 applies one normalized #6G policy to one matching #6F
 structured-need context and an explicitly supplied baseline `Deck`. Call
 `services.proposal.build_proposal(context, policy, baseline_deck, con,
 format=loaded_format, rules=deck_rules)`. The SQLite connection, `Format`, and
 `DeckRules` are required inputs; #6H does not open a database, load a format,
 or silently use validator defaults. It calls `validate_deck` exactly once in
 `unlimited` mode and passes the supplied format and rules. Collection and
-wildcard inventory are outside V1.
+wildcard inventory are outside V2.
 
 The builder revalidates the complete #6G declaration, reconciles the exact
 structured need and #6E decision with #6F, and requires a positive
 `recommendable` outcome, an untruncated returned pool, resolved eligibility,
-and exactly one eligible Arena printing. It checks the supplied format identity
-and compares the candidate's recorded title-level deck count with copies of
-its known printings in the baseline. The explicitly declared #6G target zone
+and exactly one eligible Arena printing. Before construction or validation, it
+validates the preserved analyzed Deck identity and computes the supplied baseline
+Deck's identity from its three gameplay zones. Any zone, Arena printing ID, or
+quantity mismatch returns `abstained: baseline_snapshot_mismatch`, even when the
+recommended title's earlier copy-count check would still agree. It then checks the
+supplied format identity and compares the candidate's recorded title-level deck
+count with copies of its known printings in the baseline. The explicitly declared #6G target zone
 is authoritative, even when different from the need zone. Deck size, copy
 limits, color identity, format restrictions, and commander rules remain the
 existing validator's decisions.
@@ -864,7 +880,7 @@ For the singleton printing only, #6H constructs the concrete delta
 `{operation: add, arena_id, zone, quantity: 1, title_id, name, need_key}`.
 It copies all three printing-quantity zones into a separate `Deck`, increments
 only that printing in the declared zone, and preserves unrelated contents and
-deck identity. This is deterministic realization of one eligible printing,
+the supplied `deck_id` and name. This is deterministic realization of one eligible printing,
 not a printing tie-break or quantity choice. The result retains the #6G policy,
 selected #6F context, and the validator's structured errors, warnings, and
 wildcard-cost report, plus the supplied Format and DeckRules, for traceability.
@@ -873,7 +889,8 @@ The closed outcome statuses are `accepted`, `abstained`, and `rejected`.
 `validated` is the sole accepted reason. Abstention reasons are
 `policy_context_mismatch`, `recommendation_not_positive`,
 `candidate_pool_truncated`, `unresolved_eligibility`,
-`printing_cardinality_mismatch`, `baseline_context_mismatch`, and
+`printing_cardinality_mismatch`, `baseline_snapshot_mismatch`,
+`baseline_context_mismatch`, and
 `validation_failed`. Rejection reasons are `unsupported_operation`,
 `unsupported_quantity`, `unsupported_resource_mode`, `malformed_input`,
 `malformed_baseline`, `policy_context_mismatch`, and `validation_unavailable`.
@@ -881,7 +898,7 @@ Only an accepted result contains a proposed Deck. `validation_failed` retains
 the attempted delta and complete validator evidence but no accepted proposal.
 There is no repair loop or fallback printing, quantity, removal, or resource mode.
 
-Proposal Construction & Validation v1 may construct a new proposed Deck but
+Proposal Construction & Validation v2 may construct a new proposed Deck but
 never mutates, saves, exports, or applies the supplied baseline Deck. A failed
 validation produces no accepted proposal and does not authorize an automatic
 removal, replacement, retry, or repair. Acceptance means only that this exact
@@ -898,7 +915,7 @@ python -m unittest tests.test_proposal -v
 python workbench.py diagnose-deck examples/sample_deck.txt
 ```
 
-Diagnosis normalizes Versions 1, 2, and 3 analysis through their shared flat
+Diagnosis normalizes Versions 1, 2, 3, and 4 analysis through their shared flat
 feature and interaction contract. It does not parse card text,
 validate legality, query ownership, or recommend changes. Output separates facts,
 interpretations, warnings, and unknowns. Only the existing token-value,

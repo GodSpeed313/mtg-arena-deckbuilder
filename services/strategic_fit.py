@@ -1,4 +1,4 @@
-"""Deterministic strategic-fit signals derived only from Comparison Model v1.
+"""Deterministic strategic-fit signals derived only from Comparison Model v2.
 
 Signals in this module describe explicit reviewed facts.  They do not assign
 weights, choose candidates, or mutate deck state.
@@ -10,9 +10,9 @@ from copy import deepcopy
 from typing import Any
 
 
-STRATEGIC_FIT_MODEL_VERSION = "1"
+STRATEGIC_FIT_MODEL_VERSION = "2"
 STRATEGIC_SIGNAL_REGISTRY_VERSION = "1"
-_COMPARISON_MODEL_VERSION = "1"
+_COMPARISON_MODEL_VERSION = "2"
 _ZONE_ORDER = {"main": 0, "sideboard": 1, "commander": 2}
 
 
@@ -64,7 +64,7 @@ _SIGNAL_SPECS = (
     ("fit.source.pool_truncated.v1", "source", "need_pool",
      "The returned candidate pool was truncated by its source limit."),
     ("fit.evidence.zone_boundary_unavailable.v1", "evidence", "need_pool",
-     "The source zone evidence boundary is unavailable in Candidate Facts Model Version 2."),
+     "The source zone evidence boundary is unavailable in Candidate Facts Model Version 3."),
 )
 _SIGNAL_BY_ID = {
     signal_id: {"category": category, "scope": scope, "explanation": explanation}
@@ -387,7 +387,7 @@ def _pool_signals(matrix: dict, key: tuple[str, str, str]) -> list[dict]:
     if (
         completeness["status"] == "unknown"
         and completeness["reason"]
-        == "source_evidence_boundary_not_present_in_candidate_facts_v2"
+        == "source_evidence_boundary_not_present_in_candidate_facts_v3"
     ):
         signals.append(_signal(
             "fit.evidence.zone_boundary_unavailable.v1",
@@ -486,7 +486,7 @@ def build_strategic_fit_signals(candidate_comparison: dict) -> dict:
     """Build registry-driven descriptive signals from a complete #6A model."""
     source = _mapping(candidate_comparison, "candidate comparison")
     if source.get("candidate_comparison_model_version") != _COMPARISON_MODEL_VERSION:
-        raise ValueError("strategic fit requires Candidate Comparison Model Version 1")
+        raise ValueError("strategic fit requires Candidate Comparison Model Version 2")
     required_complete = {
         "title_index", "need_matrices", "candidate_title_count", "ordering", "limitations",
     }
@@ -608,7 +608,7 @@ def build_strategic_fit_signals(candidate_comparison: dict) -> dict:
         if (
             completeness.get("status") != "unknown"
             or completeness.get("reason")
-            != "source_evidence_boundary_not_present_in_candidate_facts_v2"
+            != "source_evidence_boundary_not_present_in_candidate_facts_v3"
             or not isinstance(completeness.get("feature_level_unsupported_remainders"), list)
         ):
             raise ValueError("evidence completeness is malformed")
@@ -671,7 +671,7 @@ def build_strategic_fit_signals(candidate_comparison: dict) -> dict:
             "signals": "signal_registry_sequence",
         },
         "limitations": [
-            "Signals describe only facts established by Candidate Comparison Model Version 1.",
+            "Signals describe only facts established by Candidate Comparison Model Version 2.",
             "Signal absence means only that the exact registry predicate was not established.",
             "Pool-relative signals apply only to the returned candidates in their source need.",
             "Signals are not combined into an aggregate evaluation.",

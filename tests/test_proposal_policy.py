@@ -34,11 +34,11 @@ def policy():
 
 
 class ProposalPolicyTests(unittest.TestCase):
-    def test_valid_explicit_policy_and_closed_v1_vocabulary(self):
+    def test_valid_explicit_policy_and_closed_v2_vocabulary(self):
         result = build_proposal_policy(policy())
-        self.assertEqual(PROPOSAL_POLICY_MODEL_VERSION, "1")
-        self.assertEqual(result["proposal_policy_model_version"], "1")
-        self.assertEqual(result["required_recommendation_context_model_version"], "1")
+        self.assertEqual(PROPOSAL_POLICY_MODEL_VERSION, "2")
+        self.assertEqual(result["proposal_policy_model_version"], "2")
+        self.assertEqual(result["required_recommendation_context_model_version"], "2")
         self.assertEqual(result["recommendation_requirement"], "recommendable")
         self.assertEqual(result["candidate_pool_requirement"], "complete_only")
         self.assertEqual(result["eligibility_requirement"], "resolved")

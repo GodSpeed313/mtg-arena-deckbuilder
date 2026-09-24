@@ -6,6 +6,7 @@ from unittest.mock import patch
 import unittest
 
 from mtgadb import canonical
+from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.model import Card, CardPrinting, Deck, Format
 from services.proposal import PROPOSAL_MODEL_VERSION, build_proposal
 from services.proposal_policy import build_proposal_policy
@@ -67,8 +68,12 @@ class ProposalTests(unittest.TestCase):
     def test_valid_add_one_new_printing_and_full_provenance(self):
         context, policy = inputs()
         before = deepcopy(self.deck)
+        self.assertEqual(
+            context["analyzed_deck_identity"],
+            build_deck_snapshot_identity(self.deck),
+        )
         result = self.run_proposal(context, policy)
-        self.assertEqual(PROPOSAL_MODEL_VERSION, "1")
+        self.assertEqual(PROPOSAL_MODEL_VERSION, "2")
         self.assertEqual((result["status"], result["reason"]), ("accepted", "validated"))
         self.assertEqual(result["proposal"]["delta"], {
             "operation": "add", "arena_id": 101, "zone": "main", "quantity": 1,
@@ -91,6 +96,9 @@ class ProposalTests(unittest.TestCase):
     def test_increment_existing_printing_without_cross_zone_changes(self):
         context, policy = inputs(target="sideboard")
         deck = Deck(main={201: 1}, sideboard={101: 1, 301: 1}, commander={})
+        identity = build_deck_snapshot_identity(deck)
+        context["analyzed_deck_identity"] = identity
+        context["contexts"][0]["source_context"]["analyzed_deck_identity"] = identity
         context["contexts"][0]["returned_candidate_facts"][0]["eligibility"]["playset"] = {
             "status": "capacity_available", "current_deck_copies": 1,
             "copy_limit": 4, "remaining_capacity": 3,
@@ -204,6 +212,9 @@ class ProposalTests(unittest.TestCase):
     def test_copy_limit_failure_does_not_change_quantity_or_printing(self):
         context, policy = inputs()
         deck = Deck(main={101: 3, 201: 1})
+        identity = build_deck_snapshot_identity(deck)
+        context["analyzed_deck_identity"] = identity
+        context["contexts"][0]["source_context"]["analyzed_deck_identity"] = identity
         context["contexts"][0]["returned_candidate_facts"][0]["eligibility"]["playset"] = {
             "status": "capacity_available", "current_deck_copies": 3,
             "copy_limit": 4, "remaining_capacity": 1,
@@ -219,16 +230,50 @@ class ProposalTests(unittest.TestCase):
         self.assertIsNone(result["proposal"])
         self.assertEqual(deck, before)
 
-    def test_malformed_baseline_and_stale_title_count_reject(self):
+    def test_malformed_baseline_and_stale_snapshot_reject(self):
         context, policy = inputs()
         malformed = Deck(main={201: -1})
         before = deepcopy(malformed)
         result = self.run_proposal(context, policy, malformed)
         self.assertEqual(result["reason"], "malformed_baseline")
         self.assertEqual(malformed, before)
-        stale = Deck(main={101: 1})
+        stale = Deck(main={301: 1}, sideboard={201: 1})
+        candidate = context["contexts"][0]["returned_candidate_facts"][0]
+        known_ids = {item["arena_id"] for item in candidate["known_printings"]}
+        self.assertEqual(candidate["eligibility"]["playset"]["current_deck_copies"], 0)
+        self.assertEqual(sum(stale.main.get(item, 0) + stale.sideboard.get(item, 0)
+                             + stale.commander.get(item, 0) for item in known_ids), 0)
         result = self.run_proposal(context, policy, stale)
-        self.assertEqual(result["reason"], "baseline_context_mismatch")
+        self.assertEqual((result["status"], result["reason"]),
+                         ("abstained", "baseline_snapshot_mismatch"))
+
+    def test_snapshot_identity_provenance_fails_closed(self):
+        context, policy = inputs()
+        missing = deepcopy(context)
+        del missing["analyzed_deck_identity"]
+        self.assertEqual(self.run_proposal(missing, policy)["reason"], "malformed_input")
+
+        contradictory = deepcopy(context)
+        contradictory["contexts"][0]["source_context"]["analyzed_deck_identity"] = (
+            build_deck_snapshot_identity(Deck(main={999: 1}))
+        )
+        result = self.run_proposal(contradictory, policy)
+        self.assertEqual((result["status"], result["reason"]),
+                         ("rejected", "malformed_input"))
+
+    def test_metadata_only_baseline_change_remains_a_matching_snapshot(self):
+        context, policy = inputs()
+        renamed = Deck(
+            deck_id="another-id",
+            name="Renamed",
+            main=deepcopy(self.deck.main),
+            sideboard=deepcopy(self.deck.sideboard),
+            commander=deepcopy(self.deck.commander),
+        )
+        result = self.run_proposal(context, policy, renamed)
+        self.assertEqual((result["status"], result["reason"]), ("accepted", "validated"))
+        self.assertEqual(result["proposal"]["proposed_deck"].deck_id, "another-id")
+        self.assertEqual(result["proposal"]["proposed_deck"].name, "Renamed")
 
     def test_format_rules_and_connection_are_explicit(self):
         context, policy = inputs()
@@ -286,10 +331,10 @@ class ProposalTests(unittest.TestCase):
         for field in ("recommendation_context_model_version",
                       "source_candidate_ordering_model_version"):
             bad = deepcopy(context)
-            bad[field] = "2"
+            bad[field] = "1"
             self.assertEqual(self.run_proposal(bad, policy)["reason"], "malformed_input")
         bad = deepcopy(policy)
-        bad["proposal_policy_model_version"] = "2"
+        bad["proposal_policy_model_version"] = "1"
         self.assertEqual(self.run_proposal(context, bad)["reason"], "malformed_input")
         bad = deepcopy(context)
         bad["contexts"][0]["decision"]["policy_source"] = None

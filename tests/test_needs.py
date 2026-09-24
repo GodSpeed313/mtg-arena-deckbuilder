@@ -293,7 +293,7 @@ class NeedsAnalysisTests(unittest.TestCase):
 
     def test_existing_outputs_and_diagnosis_remain_stable(self):
         result = analyze_deck(Deck(main={701: 4, 401: 2, 1101: 54}), self.con)
-        self.assertEqual(result["analysis_version"], "3")
+        self.assertEqual(result["analysis_version"], "4")
         self.assertEqual(result["needs_model_version"], "2")
         self.assertEqual(result["dependency_model_version"], "2")
         self.assertEqual(result["functional_package_model_version"], "1")

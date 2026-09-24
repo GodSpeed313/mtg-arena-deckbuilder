@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from mtgadb import canonical
+from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.model import Card, CardPrinting, Collection, Deck, Format
 from services.candidates import CANDIDATE_MODEL_VERSION, discover_candidates
 from services.diagnosis import diagnose_analysis
@@ -88,13 +89,22 @@ class CandidatePoolTests(unittest.TestCase):
         second = discover_candidates(
             self.analysis_for(deck), deck, self.con, format_name="Test",
         )
-        self.assertEqual(CANDIDATE_MODEL_VERSION, "2")
+        self.assertEqual(CANDIDATE_MODEL_VERSION, "3")
         self.assertEqual(first, second)
-        self.assertEqual(first["candidate_model_version"], "2")
+        self.assertEqual(first["candidate_model_version"], "3")
+        self.assertEqual(first["analyzed_deck_identity"], build_deck_snapshot_identity(deck))
         self.assertEqual(first["trigger_finding_type"], "support_need")
         self.assertEqual(first["ordering"], "casefolded_card_name_then_title_id_non_ranking")
         names = [card["name"] for card in self.pool(first, "lifegain")["candidates"]]
         self.assertEqual(names, sorted(names, key=str.casefold))
+
+    def test_discovery_rejects_a_deck_different_from_the_analyzed_snapshot(self):
+        analyzed = Deck(main={101: 2, 1501: 58})
+        changed = Deck(main={101: 2, 1501: 57}, sideboard={1501: 1})
+        with self.assertRaisesRegex(ValueError, "differs from analyzed Deck snapshot"):
+            discover_candidates(
+                self.analysis_for(analyzed), changed, self.con, format_name="Test",
+            )
 
     def test_lifegain_uses_exact_reviewed_evidence_and_canonical_identity(self):
         deck = Deck(main={101: 2, 1501: 58})

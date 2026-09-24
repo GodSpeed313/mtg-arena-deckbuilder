@@ -129,9 +129,9 @@ def make_same_packages(facts):
 class StrategicFitTests(unittest.TestCase):
     def test_versions_shape_and_complete_registry_triggers(self):
         base = fit()
-        self.assertEqual(STRATEGIC_FIT_MODEL_VERSION, "1")
+        self.assertEqual(STRATEGIC_FIT_MODEL_VERSION, "2")
         self.assertEqual(STRATEGIC_SIGNAL_REGISTRY_VERSION, "1")
-        self.assertEqual(base["source_candidate_comparison_model_version"], "1")
+        self.assertEqual(base["source_candidate_comparison_model_version"], "2")
 
         facts = candidate_facts()
         add_alternative_rule_path(facts)
@@ -334,7 +334,7 @@ class StrategicFitTests(unittest.TestCase):
 
     def test_wrong_version_and_pair_projection_are_rejected(self):
         source = comparison()
-        source["candidate_comparison_model_version"] = "2"
+        source["candidate_comparison_model_version"] = "1"
         with self.assertRaises(ValueError):
             fit(source)
         complete = comparison()

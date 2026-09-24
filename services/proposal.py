@@ -7,26 +7,27 @@ import sqlite3
 from typing import Any
 
 from mtgadb.model import Deck, Format
+from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snapshot_identity
 from mtgadb.modes import OperatingMode
 from services.proposal_policy import build_proposal_policy
 from services.validator import DeckRules, ValidationReport, validate_deck
 
 
-PROPOSAL_MODEL_VERSION = "1"
+PROPOSAL_MODEL_VERSION = "2"
 _POLICY_FIELDS = (
     "policy_id", "policy_source", "need_key", "recommendation_requirement",
     "candidate_pool_requirement", "eligibility_requirement",
     "printing_requirement", "operation", "quantity", "target_zone", "resource_mode",
 )
 _CONTEXT_VERSIONS = {
-    "recommendation_context_model_version": "1",
-    "source_recommendation_decision_model_version": "1",
-    "source_candidate_ordering_model_version": "1",
-    "source_strategic_fit_model_version": "1",
-    "source_strategic_preference_policy_model_version": "1",
-    "source_candidate_comparison_model_version": "1",
-    "source_candidate_facts_model_version": "2",
-    "source_candidate_model_version": "2",
+    "recommendation_context_model_version": "2",
+    "source_recommendation_decision_model_version": "2",
+    "source_candidate_ordering_model_version": "2",
+    "source_strategic_fit_model_version": "2",
+    "source_strategic_preference_policy_model_version": "2",
+    "source_candidate_comparison_model_version": "2",
+    "source_candidate_facts_model_version": "3",
+    "source_candidate_model_version": "3",
     "functional_package_model_version": "1",
 }
 _NEGATIVE_OUTCOMES = frozenset({
@@ -106,8 +107,8 @@ def build_proposal(
         value = proposal_policy.get(field)
         if type(value) is not type(expected) or value != expected:
             return _result("rejected", reason, {"field": field, "value": value})
-    if (proposal_policy.get("proposal_policy_model_version") != "1"
-        or proposal_policy.get("required_recommendation_context_model_version") != "1"):
+    if (proposal_policy.get("proposal_policy_model_version") != "2"
+        or proposal_policy.get("required_recommendation_context_model_version") != "2"):
         return _result("rejected", "malformed_input", "unsupported proposal policy version")
     try:
         normalized = build_proposal_policy({field: proposal_policy[field]
@@ -147,7 +148,7 @@ def build_proposal(
         or type(recommendation_context.get("policy_id")) is not str
         or not recommendation_context["policy_id"]
         or decision.get("policy_id") != recommendation_context.get("policy_id")
-        or decision.get("ordering_model_version") != "1"
+        or decision.get("ordering_model_version") != "2"
     ):
         return _result("rejected", "policy_context_mismatch", "source identities contradict",
                        policy=normalized, source=row)
@@ -252,6 +253,25 @@ def build_proposal(
     if not _baseline_well_formed(baseline_deck):
         return _result("rejected", "malformed_baseline", "baseline Deck shape is malformed",
                        policy=normalized, source=row)
+    try:
+        analyzed_identity = require_deck_snapshot_identity(
+            recommendation_context.get("analyzed_deck_identity")
+        )
+        row_source_context = row.get("source_context")
+        if not isinstance(row_source_context, dict) or require_deck_snapshot_identity(
+            row_source_context.get("analyzed_deck_identity")
+        ) != analyzed_identity:
+            raise ValueError("need source Deck identity contradicts context")
+        baseline_identity = build_deck_snapshot_identity(baseline_deck)
+    except ValueError as exc:
+        return _result("rejected", "malformed_input", str(exc),
+                       policy=normalized, source=row)
+    if baseline_identity != analyzed_identity:
+        return _result("abstained", "baseline_snapshot_mismatch", {
+            "analyzed_digest": analyzed_identity["digest"],
+            "baseline_digest": baseline_identity["digest"],
+            "deck_snapshot_identity_version": "1",
+        }, policy=normalized, source=row)
     source_context = row.get("source_context")
     if not isinstance(con, sqlite3.Connection) or not isinstance(format, Format) or (
         not isinstance(rules, DeckRules)

@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 from mtgadb import canonical
+from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.model import Card, CardPrinting, Deck, Resolution
 from services.intelligence import (
     INTERACTION_FAMILIES, RULES, analyze_deck, classify_card, interactions,
@@ -753,9 +754,11 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(result["zones"]["sideboard"]["role_counts"]["card_draw"],2)
         self.assertEqual(result["legality"],"not_evaluated")
 
-    def test_analysis_v2_includes_abilities_and_copy_weighted_coverage(self):
-        result = analyze_deck(Deck(main={101: 2, 301: 4}), self.con)
-        self.assertEqual(result["analysis_version"], "3")
+    def test_analysis_v4_includes_identity_abilities_and_copy_weighted_coverage(self):
+        deck = Deck(main={101: 2, 301: 4})
+        result = analyze_deck(deck, self.con)
+        self.assertEqual(result["analysis_version"], "4")
+        self.assertEqual(result["analyzed_deck_identity"], build_deck_snapshot_identity(deck))
         cards = result["zones"]["main"]["cards"]
         self.assertTrue(all("abilities" in row and "ability_coverage" in row for row in cards))
         coverage = result["zones"]["main"]["rules_text_coverage"]

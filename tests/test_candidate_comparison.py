@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 import unittest
 
+from mtgadb.deck_identity import build_deck_snapshot_identity
+from mtgadb.model import Deck
 from services.candidate_comparison import (
     CANDIDATE_COMPARISON_MODEL_VERSION,
     build_candidate_comparisons,
@@ -232,11 +234,12 @@ def candidate_facts():
         [{"arena_id": 301, "set_code": "AAA", "collector_number": "3", "rarity": "common"}],
     )
     facts = {
-        "candidate_facts_model_version": "2",
-        "source_candidate_model_version": "2",
+        "candidate_facts_model_version": "3",
+        "source_candidate_model_version": "3",
         "functional_package_model_version": "1",
         "candidate_title_count": 3,
         "source_context": {
+            "analyzed_deck_identity": build_deck_snapshot_identity(Deck(main={201: 1}, sideboard={301: 1})),
             "trigger_finding_type": "support_need",
             "format_context": "Test",
             "color_identity_context": None,
@@ -291,10 +294,15 @@ def dimension(pool, dimension_id):
 
 class CandidateComparisonTests(unittest.TestCase):
     def test_version_scalar_statuses_and_blank_canonical_values(self):
-        result = build_candidate_comparisons(candidate_facts())
+        facts = candidate_facts()
+        result = build_candidate_comparisons(facts)
         pool = matrix(result)
-        self.assertEqual(CANDIDATE_COMPARISON_MODEL_VERSION, "1")
-        self.assertEqual(result["candidate_comparison_model_version"], "1")
+        self.assertEqual(CANDIDATE_COMPARISON_MODEL_VERSION, "2")
+        self.assertEqual(result["candidate_comparison_model_version"], "2")
+        self.assertEqual(
+            result["source_context"]["analyzed_deck_identity"],
+            facts["source_context"]["analyzed_deck_identity"],
+        )
         self.assertEqual(dimension(pool, "card.types")["status"], "same")
         self.assertEqual(dimension(pool, "mana.value")["status"], "different")
         self.assertEqual(dimension(pool, "eligibility.ownership")["status"], "unknown")
@@ -394,7 +402,7 @@ class CandidateComparisonTests(unittest.TestCase):
         self.assertEqual(completeness["status"], "unknown")
         self.assertEqual(
             completeness["reason"],
-            "source_evidence_boundary_not_present_in_candidate_facts_v2",
+            "source_evidence_boundary_not_present_in_candidate_facts_v3",
         )
         self.assertTrue(completeness["feature_level_unsupported_remainders"])
 

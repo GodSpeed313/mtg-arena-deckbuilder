@@ -15,7 +15,7 @@ from services.preference_policy import PREFERENCE_CRITERIA, build_preference_pol
 from services.strategic_fit import build_strategic_fit_signals
 
 
-CANDIDATE_ORDERING_MODEL_VERSION = "1"
+CANDIDATE_ORDERING_MODEL_VERSION = "2"
 _CRITERIA = {item.criterion_id: item for item in PREFERENCE_CRITERIA}
 _ZONES = {"main": 0, "sideboard": 1, "commander": 2}
 
@@ -195,24 +195,24 @@ def build_candidate_ordering(candidate_comparison: dict, strategic_fit: dict,
     """Order only same-need candidates under a validated explicit policy."""
     if not isinstance(candidate_comparison, dict) or not isinstance(strategic_fit, dict):
         raise ValueError("complete comparison and strategic fit models are required")
-    if candidate_comparison.get("candidate_comparison_model_version") != "1":
-        raise ValueError("Candidate Comparison Model Version 1 is required")
-    if strategic_fit.get("strategic_fit_model_version") != "1":
-        raise ValueError("Strategic Fit Model Version 1 is required")
+    if candidate_comparison.get("candidate_comparison_model_version") != "2":
+        raise ValueError("Candidate Comparison Model Version 2 is required")
+    if strategic_fit.get("strategic_fit_model_version") != "2":
+        raise ValueError("Strategic Fit Model Version 2 is required")
     if strategic_fit != build_strategic_fit_signals(candidate_comparison):
         raise ValueError("strategic fit contradicts candidate comparison")
     if not isinstance(preference_policy, dict) or (
-        preference_policy.get("strategic_preference_policy_model_version") != "1"
-        or preference_policy.get("preference_rule_registry_version") != "1"
+        preference_policy.get("strategic_preference_policy_model_version") != "2"
+        or preference_policy.get("preference_rule_registry_version") != "2"
     ):
-        raise ValueError("Strategic Preference Policy Model Version 1 is required")
+        raise ValueError("Strategic Preference Policy Model Version 2 is required")
     policy_fields = ("policy_id", "policy_source", "scope", "eligibility_handling",
                      "rules", "serialization")
     if any(field not in preference_policy for field in policy_fields):
         raise ValueError("complete preference policy is required")
     policy = build_preference_policy({field: preference_policy[field] for field in policy_fields})
     if preference_policy != policy:
-        raise ValueError("preference policy is not a normalized Version 1 model")
+        raise ValueError("preference policy is not a normalized Version 2 model")
 
     titles = {item["title_id"]: item for item in candidate_comparison["title_index"]}
     title_signals = {item["title_id"]: item["signals"]
@@ -259,9 +259,9 @@ def build_candidate_ordering(candidate_comparison: dict, strategic_fit: dict,
         })
     return {
         "candidate_ordering_model_version": CANDIDATE_ORDERING_MODEL_VERSION,
-        "source_candidate_comparison_model_version": "1",
-        "source_strategic_fit_model_version": "1",
-        "source_strategic_preference_policy_model_version": "1",
+        "source_candidate_comparison_model_version": "2",
+        "source_strategic_fit_model_version": "2",
+        "source_strategic_preference_policy_model_version": "2",
         "policy_id": policy["policy_id"],
         "policy_source": deepcopy(policy["policy_source"]),
         "serialization": deepcopy(policy["serialization"]),

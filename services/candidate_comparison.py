@@ -1,4 +1,4 @@
-"""Deterministic comparison facts derived only from Candidate Facts Version 2.
+"""Deterministic comparison facts derived only from Candidate Facts Version 3.
 
 The normalized model stores title facts once and need-specific evidence per
 candidate occurrence. Pairwise projections are generated only when requested.
@@ -10,10 +10,11 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 from typing import Any, Callable
 
+from mtgadb.deck_identity import require_deck_snapshot_identity
 
-CANDIDATE_COMPARISON_MODEL_VERSION = "1"
-_CANDIDATE_FACTS_VERSION = "2"
-_CANDIDATE_VERSION = "2"
+CANDIDATE_COMPARISON_MODEL_VERSION = "2"
+_CANDIDATE_FACTS_VERSION = "3"
+_CANDIDATE_VERSION = "3"
 _PACKAGE_VERSION = "1"
 _ZONE_ORDER = {"main": 0, "sideboard": 1, "commander": 2}
 _FACT_STATES = frozenset({"known", "unknown", "not_applicable"})
@@ -372,9 +373,11 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
     """Build normalized, non-evaluative comparison facts without database access."""
     source = _mapping(candidate_facts, "candidate facts")
     if source.get("candidate_facts_model_version") != _CANDIDATE_FACTS_VERSION:
-        raise ValueError("candidate comparisons require Candidate Facts Model Version 2")
+        raise ValueError("candidate comparisons require Candidate Facts Model Version 3")
     if source.get("source_candidate_model_version") != _CANDIDATE_VERSION:
-        raise ValueError("candidate comparisons require Candidate Model Version 2")
+        raise ValueError("candidate comparisons require Candidate Model Version 3")
+    source_context = _mapping(source.get("source_context"), "source context")
+    require_deck_snapshot_identity(source_context.get("analyzed_deck_identity"))
     if source.get("functional_package_model_version") != _PACKAGE_VERSION:
         raise ValueError("candidate comparisons require Functional Package Model Version 1")
 
@@ -559,7 +562,7 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
             "package_comparison": _package_comparison(candidates, titles),
             "evidence_completeness": {
                 "status": "unknown",
-                "reason": "source_evidence_boundary_not_present_in_candidate_facts_v2",
+                "reason": "source_evidence_boundary_not_present_in_candidate_facts_v3",
                 "feature_level_unsupported_remainders": unsupported,
             },
         })
@@ -597,7 +600,7 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
             "dimensions": "fixed_registry_order",
         },
         "limitations": [
-            "Comparisons describe returned Candidate Facts Version 2 records only.",
+            "Comparisons describe returned Candidate Facts Version 3 records only.",
             "Pool-local package exclusivity does not establish global uniqueness.",
             "Unknown and not-applicable facts remain distinct.",
             "Support context describes reviewed prerequisites without estimating occurrence.",

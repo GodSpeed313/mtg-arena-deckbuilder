@@ -59,8 +59,16 @@ class RecommendationContextTests(unittest.TestCase):
         result = build_recommendation_context(decisions, comparison)
         row = context(result)
         source = comparison["need_matrices"][0]
-        self.assertEqual(RECOMMENDATION_CONTEXT_MODEL_VERSION, "1")
-        self.assertEqual(result["recommendation_context_model_version"], "1")
+        self.assertEqual(RECOMMENDATION_CONTEXT_MODEL_VERSION, "2")
+        self.assertEqual(result["recommendation_context_model_version"], "2")
+        self.assertEqual(
+            result["analyzed_deck_identity"],
+            comparison["source_context"]["analyzed_deck_identity"],
+        )
+        self.assertEqual(
+            row["source_context"]["analyzed_deck_identity"],
+            result["analyzed_deck_identity"],
+        )
         self.assertEqual(row["decision"], decisions["decisions"][0])
         self.assertEqual(row["decision"]["outcome"], "recommendable")
         self.assertEqual(row["source_need"], source["source_need"])
@@ -72,7 +80,7 @@ class RecommendationContextTests(unittest.TestCase):
             "matching_feature_evidence"])
         self.assertEqual(alpha["required_feature_eligibility"], source["candidates"][0][
             "required_feature_eligibility"])
-        self.assertEqual(result["source_candidate_facts_model_version"], "2")
+        self.assertEqual(result["source_candidate_facts_model_version"], "3")
         self.assertEqual(row["decision"]["policy_source"],
                          decisions["decisions"][0]["policy_source"])
 
@@ -232,11 +240,11 @@ class RecommendationContextTests(unittest.TestCase):
     def test_versions_duplicates_and_source_references_fail_closed(self):
         decisions, comparison = models([rule()])
         bad = deepcopy(decisions)
-        bad["recommendation_decision_model_version"] = "2"
+        bad["recommendation_decision_model_version"] = "1"
         with self.assertRaises(ValueError):
             build_recommendation_context(bad, comparison)
         bad = deepcopy(comparison)
-        bad["candidate_comparison_model_version"] = "2"
+        bad["candidate_comparison_model_version"] = "1"
         with self.assertRaises(ValueError):
             build_recommendation_context(decisions, bad)
         bad = deepcopy(comparison)
