@@ -909,6 +909,57 @@ does not mean a user accepted it or Arena was changed. No CLI/UI was added.
 python -m unittest tests.test_proposal -v
 ```
 
+### Validated proposal presentation (Pass #6J)
+
+Proposal Presentation Model Version 1 is the read-only boundary between a
+validator-accepted Proposal Model Version 2 result and any future human review.
+Call
+`services.proposal_presentation.build_proposal_presentation(proposal_result)`
+with one complete `accepted: validated` Proposal v2 result. Malformed,
+abstained, rejected, contradictory, or unsupported inputs raise `ValueError`
+and produce no presentation.
+
+The builder revalidates the retained Proposal Policy v2 declaration, selected
+Recommendation Context v2 evidence, candidate and printing provenance, baseline
+Deck Snapshot Identity v1, concrete add-one delta, and successful validator
+evidence. It independently computes the proposed Deck identity and requires the
+resulting gameplay state to equal the analyzed baseline plus exactly the declared
+delta. Unrelated additions, removals, zone changes, printing changes, or quantity
+changes fail closed. The builder never calls the database or validator and does
+not rerun analysis, discovery, ordering, or recommendation.
+
+The output deliberately contains two different deterministic SHA-256 identities:
+
+* `proposal_identity` Version 1 binds semantic action data: Proposal v2 and
+  Proposal Policy v2 versions and provenance, recommendation-policy provenance,
+  canonical baseline identity, the exact normalized operation/printing/zone/
+  quantity/title/need delta, resulting gameplay identity, and captured validation
+  semantics. Format sets and mappings, `DeckRules`, and operating mode are
+  canonicalized so insertion order has no meaning. Deck name, `deck_id`, card
+  display name, UI wording, and serialization order are not semantic proposal
+  identity.
+* `presentation_identity` Version 1 binds the complete deterministic review
+  artifact plus the semantic proposal identity. It therefore changes when
+  human-visible proposal information, validator warnings, disclosures, or review
+  wording changes, even when the gameplay action is unchanged.
+
+Both identities are mismatch-detection fingerprints only. They are not
+authentication, signatures, consent, approval, or execution authorization. The
+review artifact explicitly reports `validator-accepted`, `not-user-approved`,
+`not-applied`, and `not-resource-authorized`. It discloses that validation used
+`unlimited` mode, that ownership and wildcard spending were not authorized, and
+that captured validation is not a claim of current validity.
+
+Pass #6J does not emit a mutable proposed Deck, mutate an input, persist or export
+anything, apply a change, record approval, authorize resources, or make a proposal
+executable. A future execution boundary must bind human review to the exact
+presentation and proposal identities, verify a fresh baseline Deck identity,
+reconstruct the authorized delta, and revalidate under current execution context.
+
+```powershell
+python -m unittest tests.test_proposal_presentation -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
