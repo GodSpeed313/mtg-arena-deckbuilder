@@ -10,6 +10,7 @@ from services.human_proposal_decision import (
     HUMAN_PROPOSAL_DECISION_IDENTITY_VERSION,
     HUMAN_PROPOSAL_DECISION_MODEL_VERSION,
     build_human_proposal_decision,
+    require_human_proposal_decision,
 )
 from services.proposal_presentation import build_proposal_presentation
 from tests import test_proposal_presentation as presentation_tests
@@ -211,6 +212,86 @@ class HumanProposalDecisionTests(unittest.TestCase):
         for phrase in ("not execution authorization", "validation remains current",
                        "resource-spending authority", "does not mutate", "not signatures"):
             self.assertIn(phrase, limitations)
+
+    def test_public_verifier_accepts_complete_decision_by_value(self):
+        decision = build_human_proposal_decision(self.presentation, decision_spec())
+        before = deepcopy(decision)
+        verified = require_human_proposal_decision(decision)
+        self.assertEqual(verified, decision)
+        self.assertIsNot(verified, decision)
+        self.assertEqual(decision, before)
+
+    def test_public_verifier_rejects_versions_digests_and_cross_identity_tampering(self):
+        decision = build_human_proposal_decision(self.presentation, decision_spec())
+        mutations = []
+        for path, value in (
+            (("human_proposal_decision_model_version",), "2"),
+            (("source_proposal_presentation_model_version",), "2"),
+            (("human_proposal_decision_identity",
+              "human_proposal_decision_identity_version"), "2"),
+            (("human_proposal_decision_identity", "digest_algorithm"), "sha512"),
+            (("human_proposal_decision_identity", "digest"), "0" * 64),
+            (("decision_source", "provenance", "reference"), " altered "),
+            (("limitations",), []),
+        ):
+            changed = deepcopy(decision)
+            target = changed
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            mutations.append(changed)
+        other = build_human_proposal_decision(
+            build_proposal_presentation(self.fixture.accepted(
+                policy_id="proposal.other.v1", policy_reference="test declaration",
+            )),
+            decision_spec(),
+        )
+        swapped = deepcopy(decision)
+        swapped["proposal_identity"] = other["proposal_identity"]
+        mutations.append(swapped)
+        nested = deepcopy(decision)
+        nested["source_presentation"] = other["source_presentation"]
+        mutations.append(nested)
+        for changed in mutations:
+            with self.assertRaises(ValueError):
+                require_human_proposal_decision(changed)
+
+    def test_public_verifier_rejects_missing_and_extra_fields_at_owned_boundaries(self):
+        decision = build_human_proposal_decision(self.presentation, decision_spec())
+        for path in ((), ("human_proposal_decision_identity",),
+                     ("human_proposal_decision_identity", "canonical_payload"),
+                     ("decision_source",), ("decision_source", "provenance")):
+            original = decision
+            for key in path:
+                original = original[key]
+            for missing in [*original, None]:
+                changed = deepcopy(decision)
+                target = changed
+                for key in path:
+                    target = target[key]
+                if missing is None:
+                    target["unsupported"] = True
+                else:
+                    del target[missing]
+                with self.subTest(path=path, missing=missing), self.assertRaises(ValueError):
+                    require_human_proposal_decision(changed)
+
+    def test_public_verifier_rejects_numeric_type_substitution_in_repeated_identity(self):
+        for value in (True, 1.0):
+            for field in ("proposal_identity", "human_proposal_decision_identity"):
+                changed = build_human_proposal_decision(self.presentation, decision_spec())
+                identity = changed[field]
+                proposal_identity = identity if field == "proposal_identity" else (
+                    identity["canonical_payload"]["proposal_identity"]
+                )
+                proposal_identity["canonical_payload"]["delta"]["quantity"] = value
+                # Rehashing a contradictory Decision payload cannot hide type drift.
+                identity["digest"] = hashlib.sha256(json.dumps(
+                    identity["canonical_payload"], sort_keys=True, separators=(",", ":"),
+                    ensure_ascii=False, allow_nan=False,
+                ).encode("utf-8")).hexdigest()
+                with self.subTest(value=value, field=field), self.assertRaises(ValueError):
+                    require_human_proposal_decision(changed)
 
 
 if __name__ == "__main__":

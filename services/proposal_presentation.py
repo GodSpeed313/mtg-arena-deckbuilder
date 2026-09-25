@@ -16,6 +16,7 @@ from mtgadb.deck_identity import (
     require_deck_snapshot_identity,
 )
 from mtgadb.model import Deck, Format
+from mtgadb.modes import OperatingMode
 from services.proposal_policy import build_proposal_policy
 from services.validator import DeckRules
 
@@ -254,16 +255,15 @@ def _canonical_rules(value: Any) -> dict:
     }
 
 
-def _canonical_validation_inputs(value: Any) -> dict:
-    inputs = _mapping(
-        value, "captured validation inputs", frozenset({"mode", "format", "rules"}),
-    )
-    if inputs["mode"] != "unlimited":
-        raise ValueError("Proposal Model v2 requires unlimited validation mode")
+def canonical_validation_context(*, format: Format, rules: DeckRules,
+                                 mode: OperatingMode) -> dict:
+    """Canonicalize explicit validator inputs without performing validation."""
+    if not isinstance(mode, OperatingMode):
+        raise ValueError("explicit OperatingMode is required")
     result = {
-        "mode": "unlimited",
-        "format": _canonical_format(inputs["format"]),
-        "rules": _canonical_rules(inputs["rules"]),
+        "mode": mode.value,
+        "format": _canonical_format(format),
+        "rules": _canonical_rules(rules),
     }
     if result["format"]["min_deck_size"] > result["format"]["max_deck_size"] or (
         result["format"]["min_command_zone"] > result["format"]["max_command_zone"]
@@ -272,6 +272,17 @@ def _canonical_validation_inputs(value: Any) -> dict:
     ):
         raise ValueError("captured validation ranges are contradictory")
     return result
+
+
+def _canonical_validation_inputs(value: Any) -> dict:
+    inputs = _mapping(
+        value, "captured validation inputs", frozenset({"mode", "format", "rules"}),
+    )
+    if inputs["mode"] != "unlimited":
+        raise ValueError("Proposal Model v2 requires unlimited validation mode")
+    return canonical_validation_context(
+        format=inputs["format"], rules=inputs["rules"], mode=OperatingMode.UNLIMITED,
+    )
 
 
 def _canonical_list(value: Any, label: str, item_type: type) -> list:
@@ -740,10 +751,12 @@ def require_proposal_presentation(value: dict) -> dict:
         },
         "need_key": delta["need_key"],
     }
-    if displayed != expected_display or review["source_baseline_deck_identity"] != baseline or (
-        review["resulting_deck_identity"] != result
-        or review["proposal_policy"] != policy
-        or review["recommendation_provenance"] != recommendation
+    # JSON types are semantic: Python mapping equality equates True, 1 and 1.0.
+    if _encoded(displayed) != _encoded(expected_display) or (
+        _encoded(review["source_baseline_deck_identity"]) != _encoded(baseline)
+        or _encoded(review["resulting_deck_identity"]) != _encoded(result)
+        or _encoded(review["proposal_policy"]) != _encoded(policy)
+        or _encoded(review["recommendation_provenance"]) != _encoded(recommendation)
     ):
         raise ValueError("review artifact contradicts the semantic proposal")
     validation = _mapping(
@@ -757,7 +770,7 @@ def require_proposal_presentation(value: dict) -> dict:
         validation["resource_mode_disclosure"] != _RESOURCE_DISCLOSURE
         or validation["freshness_disclosure"] != _FRESHNESS_DISCLOSURE
         or _validation_evidence(validation["evidence"]) != validation["evidence"]
-        or validation["captured_semantics"] != validation_semantics
+        or _encoded(validation["captured_semantics"]) != _encoded(validation_semantics)
     ):
         raise ValueError("displayed validation is malformed or contradictory")
 
@@ -771,7 +784,7 @@ def require_proposal_presentation(value: dict) -> dict:
         "proposal_identity": proposal_identity,
         "review_artifact": review,
     }
-    if presentation_identity["canonical_payload"] != expected_presentation_payload:
+    if _encoded(presentation_identity["canonical_payload"]) != _encoded(expected_presentation_payload):
         raise ValueError("presentation identity contradicts the review artifact")
     return deepcopy(presentation)
 

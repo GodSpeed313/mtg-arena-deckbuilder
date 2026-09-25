@@ -1005,6 +1005,115 @@ or rerun proposal or recommendation work.
 python -m unittest tests.test_proposal_presentation tests.test_human_proposal_decision -v
 ```
 
+### Pre-execution revalidation (Pass #6L)
+
+Pre-Execution Revalidation Model Version 1 checks one exact approved add-one
+delta against explicitly supplied current state. Call
+`services.pre_execution_revalidation.build_pre_execution_revalidation(decision,
+current_baseline_deck, con, format=..., rules=..., mode=..., collection=...,
+inventory=...)`. The current `Format`, `DeckRules`, and `OperatingMode` are
+required; no current context is silently loaded or inferred from historical
+validation. This is an in-memory service, with no CLI execution path.
+
+The additive #6K-owned `require_human_proposal_decision` verifier requires the
+complete closed Human Proposal Decision v1 artifact and returns a detached copy.
+It verifies explicit normalized decision provenance, the retained #6J
+presentation, complete Proposal/Presentation/Decision identities, canonical
+payloads, recomputed digests, cross-identity consistency, and fixed limitations.
+Unsupported versions/algorithms, malformed fields, altered reviews, and
+contradictory identities fail closed. Canonical JSON comparisons distinguish
+booleans, integers, and floats in duplicated identities and review data. Valid
+#6J/#6K output contracts and versions are unchanged.
+
+A verified `declined` decision returns `not_ready / decision_declined` before
+current Deck reconstruction, database access, fresh validation, or resource
+evaluation. For `approved`, #6L independently fingerprints the supplied baseline
+and requires exact equality with the approved baseline gameplay identity. Name,
+`deck_id`, and dictionary insertion order remain non-semantic. Changes to any
+printing, quantity, or zone, including unrelated cards, require a fresh proposal
+and approval path.
+
+Only the verified Proposal Identity supplies the delta. #6L copies the baseline
+zones, adds exactly the approved one copy to the approved zone, and requires the
+reconstructed identity to equal the reviewed result. Historical `proposed_deck`
+objects and caller-supplied replacement deltas are not inputs. The working Deck
+is ephemeral and is never returned. The approved printing must still exist and
+map to the approved title in the supplied database. The complete reconstructed
+Deck then passes through the existing deterministic validator with the current
+Format, DeckRules, mode, collection, and inventory.
+
+| Mode | Resource assessment and outcome |
+| --- | --- |
+| `unlimited` | Legality/structure only; resources are `not_evaluated`. A positive result makes no ownership or affordability claim. |
+| `full_collection` | Explicit collection required. A valid owned path is `owned_no_crafting_required`; missing or insufficient ownership prevents revalidation. |
+| `wildcard_budget` | Explicit collection and inventory required. Zero cost is `no_spend_required`. Positive affordable cost is `affordable_spend_not_authorized` and returns `not_ready / resource_authorization_required`. Missing or insufficient resources prevent revalidation. |
+
+Resource demand covers the whole reconstructed Deck, using current printing
+rarities and the validator's existing basic-land exemption. Ownership is per
+printing; another owned printing is never substituted. Under the existing
+`Collection` contract, omitted printing counts mean zero owned, while `None`
+means unavailable collection data. Required wildcard counts missing from
+`Inventory.wildcards` are unknown, not zero. A caller with an incomplete or
+unavailable collection observation must not promote it to a complete Collection.
+No freshness of external observations or account identity is inferred here.
+
+The closed status/reason vocabulary is:
+
+* `revalidated / fresh_validation_passed`
+* `not_ready / decision_declined`
+* `not_ready / baseline_snapshot_mismatch`
+* `not_ready / current_printing_unavailable`
+* `not_ready / current_printing_identity_mismatch`
+* `not_ready / current_validation_failed`
+* `not_ready / resource_authorization_required`
+* `rejected / malformed_input`
+* `rejected / unsupported_version`
+* `rejected / identity_mismatch`
+* `rejected / result_identity_mismatch`
+* `rejected / validation_unavailable`
+
+`current_validation_failed` retains structured fresh validator issues to
+distinguish legality failures from `collection_required`, `not_owned`,
+`inventory_required`, `wildcard_inventory_incomplete`, and `wildcard_shortage`.
+Malformed resource objects are rejected rather than converted to zero balances.
+No additional top-level reason vocabulary is introduced.
+
+Output retains the verified human decision by value, all three historical
+identities, exact delta, fresh baseline/result identities, canonical current
+validation context, current printing fact, fresh validator evidence, resource
+assessment, deferred destination assessment, and fixed limitations. Every
+resource assessment reports `spending_authorized: false`. Destination remains
+`deferred / no_destination_contract`; neither Deck metadata nor this check binds
+a saved destination.
+
+Positive results additionally carry Pre-Execution Revalidation Identity v1:
+SHA-256 over UTF-8 canonical JSON with sorted keys, compact separators, preserved
+Unicode, and non-finite numbers forbidden. Its payload binds model version,
+status/reason, the complete historical identities, exact delta, both fresh Deck
+identities, current Format/DeckRules/mode, printing fact, fresh validation
+evidence, and resource/destination assessments. Validator issue lists and
+wildcard-cost keys are normalized for deterministic evidence. No timestamps or
+arbitrary expiry are added. Non-positive results have a null revalidation
+identity.
+
+`revalidated` is readiness evidence only, not execution authorization or a
+capability token. Digests detect mismatches; they do not authenticate a human,
+prove consent, or act as signatures. This service does not mutate an authoritative
+Deck, persist, export, save snapshots, apply changes, craft cards, spend resources,
+call Arena, select alternatives, or rerun recommendation/proposal generation.
+It does not eliminate time-of-check/time-of-use risk: a future executor must
+independently check authoritative current state immediately before mutation.
+Generic exporter, database-write, and snapshot surfaces remain outside the
+proposal authority chain and are not exposed as proposal execution paths.
+
+```powershell
+python -m unittest tests.test_pre_execution_revalidation -v
+python -m unittest tests.test_proposal tests.test_proposal_presentation tests.test_human_proposal_decision tests.test_pre_execution_revalidation -v
+python -m unittest discover -v
+python test_mtgadb.py
+git diff --check
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
