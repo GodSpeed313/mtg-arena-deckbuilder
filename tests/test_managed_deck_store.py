@@ -1,9 +1,11 @@
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
 import tempfile
+from threading import Barrier
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -332,6 +334,303 @@ class ManagedDeckStoreTests(unittest.TestCase):
         changed = deepcopy(state)
         changed["deck"]["main"] *= 2
         self.error("invalid_input", lambda: store.require_destination_state(changed))
+
+
+class ManagedDeckMutationTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ManagedDeckStoreTests(methodName="runTest")
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.path = self.fixture.path
+        self.state = self.fixture.create()
+        self.record_id = self.state["record_id"]
+
+    def replace(self, expected=None, deck=None, **metadata):
+        return store.conditional_replace(
+            self.path, self.record_id, self.state if expected is None else expected,
+            Deck(main={1001: 4}) if deck is None else deck,
+            **({**self.state["metadata"], **metadata}))
+
+    def delete(self, expected=None):
+        return store.conditional_delete(self.path, self.record_id,
+                                        self.state if expected is None else expected)
+
+    def error(self, code, action):
+        self.fixture.error(code, action)
+
+    def read(self):
+        return store.read_destination_state(self.path, self.record_id)
+
+    def test_exact_replacement_all_zones_and_removal(self):
+        replacement = Deck(main={10: 2}, sideboard={20: 3}, commander={30: 1})
+        result = self.replace(deck=replacement)
+        self.assertEqual(result["status"], "changed")
+        state = result["destination_state"]
+        self.assertEqual(state["revision"], 2)
+        self.assertEqual(state["gameplay_snapshot_identity"], build_deck_snapshot_identity(replacement))
+        self.assertEqual(store.require_destination_state(state), self.read())
+        empty = self.replace(expected=state, deck=Deck())["destination_state"]
+        self.assertEqual(empty["revision"], 3)
+        self.assertEqual(empty["deck"].size(), 0)
+        with closing(sqlite3.connect(self.path)) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM managed_deck_cards").fetchone()[0], 0)
+
+    def test_individual_zone_replacement(self):
+        current = self.state
+        for zone in ("main", "sideboard", "commander"):
+            replacement = Deck(**{zone: {77: 1}})
+            current = self.replace(expected=current, deck=replacement)["destination_state"]
+            self.assertEqual(current["gameplay_snapshot_identity"], build_deck_snapshot_identity(replacement))
+
+    def test_metadata_changes_increment_and_null_clears(self):
+        renamed = self.replace(deck=self.state["deck"], name="Renamed")["destination_state"]
+        self.assertEqual(renamed["revision"], 2)
+        cleared = self.replace(expected=renamed, deck=renamed["deck"], name="Renamed", format_label=None)["destination_state"]
+        self.assertEqual(cleared["revision"], 3)
+        self.assertIsNone(cleared["metadata"]["format_label"])
+        self.assertEqual(cleared["gameplay_snapshot_identity"], self.state["gameplay_snapshot_identity"])
+
+    def test_metadata_arguments_are_required(self):
+        with self.assertRaises(TypeError):
+            store.conditional_replace(self.path, self.record_id, self.state, Deck(), name="x")
+
+    def test_noop_preserves_revision_and_storage(self):
+        before = self.path.read_bytes()
+        result = self.replace(deck=self.state["deck"])
+        self.assertEqual(result, {"status": "unchanged", "destination_state": self.state})
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_stale_noop_cannot_refresh_state(self):
+        changed = self.replace()["destination_state"]
+        self.error("revision_mismatch", lambda: self.replace(deck=changed["deck"]))
+        self.error("revision_mismatch", self.delete)
+        self.assertEqual(self.read(), changed)
+
+    def test_changed_then_restored_rejects_old_revision(self):
+        changed = self.replace()["destination_state"]
+        restored = self.replace(expected=changed, deck=self.state["deck"])["destination_state"]
+        self.assertEqual(restored["revision"], 3)
+        self.assertEqual(restored["gameplay_snapshot_identity"], self.state["gameplay_snapshot_identity"])
+        self.error("revision_mismatch", lambda: self.replace(deck=self.state["deck"]))
+
+    def test_store_identity_and_generation_checked_for_both_operations(self):
+        for key, code in (("store_id", "store_identity_mismatch"),
+                          ("store_generation", "store_generation_mismatch")):
+            expected = deepcopy(self.state)
+            expected[key] = str(uuid4())
+            self.error(code, lambda: self.replace(expected=expected))
+            self.error(code, lambda: self.delete(expected=expected))
+        self.assertEqual(self.read(), self.state)
+
+    def test_other_record_same_gameplay_not_substituted(self):
+        other = self.fixture.create()
+        self.error("record_identity_mismatch", lambda: self.replace(expected=other))
+        self.error("record_identity_mismatch", lambda: self.delete(expected=other))
+        self.error("record_identity_mismatch", lambda: store.conditional_delete(self.path, str(uuid4()), self.state))
+
+    def test_matching_missing_record_id_is_missing(self):
+        expected = deepcopy(self.state)
+        expected["record_id"] = str(uuid4())
+        self.error("missing_record", lambda: store.conditional_delete(self.path, expected["record_id"], expected))
+
+    def test_baseline_double_check_for_both_operations(self):
+        self.fixture.sql("UPDATE managed_deck_cards SET quantity=8")
+        before = self.read()
+        self.error("baseline_mismatch", self.replace)
+        self.error("baseline_mismatch", self.delete)
+        self.assertEqual(self.read(), before)
+
+    def test_metadata_double_check(self):
+        self.fixture.sql("UPDATE managed_decks SET name='untracked change'")
+        self.error("metadata_mismatch", self.replace)
+        self.error("metadata_mismatch", self.delete)
+
+    def test_malformed_and_tampered_expected(self):
+        for key, value in (("revision", True), ("revision", 1.0), ("revision", "1"),
+                           ("deck", Deck()), ("surprise", 1)):
+            expected = deepcopy(self.state)
+            expected[key] = value
+            self.error("malformed_expected", lambda: self.replace(expected=expected))
+            self.error("malformed_expected", lambda: self.delete(expected=expected))
+        self.assertEqual(self.read(), self.state)
+
+    def test_malformed_replacement_is_not_persisted(self):
+        for deck in ({}, Deck(main={1: True}), Deck(main={True: 1}), Deck(main={1: 0}),
+                     Deck(main={1: "1"}), Deck(main={1: 1.0})):
+            self.error("malformed_replacement", lambda: self.replace(deck=deck))
+        self.error("malformed_replacement", lambda: self.replace(name=True))
+        self.error("malformed_replacement", lambda: self.replace(format_label={}))
+        self.assertEqual(self.read(), self.state)
+
+    def test_revision_exhaustion_change_delete_but_not_noop(self):
+        self.fixture.sql("UPDATE managed_decks SET revision=?", (store.MAX_INTEGER,))
+        state = self.read()
+        self.error("revision_exhausted", lambda: self.replace(expected=state))
+        self.error("revision_exhausted", lambda: self.delete(expected=state))
+        self.assertEqual(self.replace(expected=state, deck=state["deck"])["status"], "unchanged")
+        self.assertEqual(self.read(), state)
+
+    def test_tombstone_retains_rows_and_identity_reservation(self):
+        result = self.delete()
+        self.assertEqual(result, {"status": "changed", "lifecycle": "deleted",
+            "store_id": self.state["store_id"], "store_generation": self.state["store_generation"],
+            "record_id": self.record_id, "previous_revision": 1, "revision": 2})
+        self.error("deleted_record", self.read)
+        self.error("deleted_record", self.replace)
+        self.error("deleted_record", self.delete)
+        self.assertEqual(store.list_destinations(self.path), [])
+        with closing(sqlite3.connect(self.path)) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM managed_deck_cards").fetchone()[0], 3)
+        with patch.object(store, "uuid4", return_value=self.record_id):
+            self.error("unavailable_store", self.fixture.create)
+        self.assertNotEqual(self.fixture.create()["record_id"], self.record_id)
+        self.assertFalse(hasattr(store, "undelete"))
+
+    def test_serialized_expected_and_detached_results(self):
+        before = deepcopy(self.state)
+        deck = Deck(deck_id="unrelated", main={6: 1})
+        frozen = deepcopy(deck)
+        result = self.replace(expected=store.serialize_destination_state(self.state), deck=deck)
+        self.assertEqual(deck, frozen)
+        self.assertEqual(self.state, before)
+        result["destination_state"]["deck"].main.clear()
+        self.assertEqual(self.read()["deck"].main, {6: 1})
+
+    def test_store_generation_and_other_stores_unchanged(self):
+        canonical_path = self.fixture.root / "canonical.db"
+        archive_path = self.fixture.root / "archive.db"
+        canonical.create(canonical_path).close()
+        snapshot_store.create_store(archive_path)
+        before = (canonical_path.read_bytes(), archive_path.read_bytes())
+        state = self.replace()["destination_state"]
+        self.delete(expected=state)
+        self.assertEqual(store.open_store(self.path), self.fixture.meta)
+        self.assertEqual((canonical_path.read_bytes(), archive_path.read_bytes()), before)
+
+    def test_malformed_stored_state_fails_closed(self):
+        self.fixture.sql("UPDATE managed_deck_cards SET quantity=0", ignore_checks=True)
+        before = self.path.read_bytes()
+        self.error("malformed_record", self.replace)
+        self.error("malformed_record", self.delete)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_reread_failure_rolls_back_complete_replacement(self):
+        original = store._read
+        calls = 0
+
+        def fail_second(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise sqlite3.OperationalError("synthetic read failure")
+            return original(*args, **kwargs)
+
+        with patch.object(store, "_read", side_effect=fail_second):
+            self.error("transaction_failed", self.replace)
+        self.assertEqual(self.read(), self.state)
+
+    def test_result_mismatch_rolls_back(self):
+        original = store._read
+        calls = 0
+
+        def wrong_result(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            value = original(*args, **kwargs)
+            if calls == 2:
+                value["revision"] += 1
+            return value
+
+        with patch.object(store, "_read", side_effect=wrong_result):
+            self.error("result_mismatch", self.replace)
+        self.assertEqual(self.read(), self.state)
+
+    def test_commit_failure_both_operations_roll_back(self):
+        original = sqlite3.connect
+
+        class FailingCommit(sqlite3.Connection):
+            def commit(self):
+                raise sqlite3.OperationalError("synthetic failure")
+
+        for operation in (self.replace, self.delete):
+            with patch.object(store.sqlite3, "connect", side_effect=lambda *a, **kw:
+                              original(*a, factory=FailingCommit, **kw)):
+                self.error("commit_failed", operation)
+            self.assertEqual(self.read(), self.state)
+
+    def test_actual_concurrent_writers_only_one_succeeds(self):
+        for index, journal in enumerate(("DELETE", "WAL")):
+            self.fixture.sql("PRAGMA journal_mode=" + journal)
+            expected = self.read()
+            gate = Barrier(2)
+
+            def writer(number):
+                gate.wait(timeout=10)
+                try:
+                    return self.replace(expected=expected, deck=Deck(main={number: 1}))["status"]
+                except store.ManagedDeckStoreError as exc:
+                    return exc.code
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(writer, n + index * 100) for n in (40, 50)]
+                outcomes = [future.result(timeout=15) for future in futures]
+            self.assertCountEqual(outcomes, ["changed", "revision_mismatch"])
+            self.assertEqual(self.read()["revision"], expected["revision"] + 1)
+
+    def test_busy_storage_no_retry_or_partial_update(self):
+        original = sqlite3.connect
+        with closing(original(self.path, isolation_level=None)) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            with patch.object(store.sqlite3, "connect", side_effect=lambda *a, **kw:
+                              original(*a, timeout=0, **kw)):
+                self.error("storage_busy", self.replace)
+                self.error("storage_busy", self.delete)
+            writer.rollback()
+        self.assertEqual(self.read(), self.state)
+
+    def test_foreign_keys_enabled_during_mutation(self):
+        original = store._current_for_mutation
+
+        def check(con, expected):
+            self.assertEqual(con.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+            return original(con, expected)
+
+        with patch.object(store, "_current_for_mutation", side_effect=check):
+            state = self.replace()["destination_state"]
+            self.delete(expected=state)
+
+    def test_partial_insert_failure_rolls_back_header_and_rows(self):
+        original = sqlite3.connect
+
+        class PartialInsert(sqlite3.Connection):
+            def executemany(self, sql, parameters):
+                rows = list(parameters)
+                super().execute(sql, rows[0])
+                raise sqlite3.OperationalError("synthetic partial insert")
+
+        with patch.object(store.sqlite3, "connect", side_effect=lambda *a, **kw:
+                          original(*a, factory=PartialInsert, **kw)):
+            self.error("transaction_failed", lambda: self.replace(deck=Deck(main={5: 2, 6: 1}), name="New"))
+        self.assertEqual(self.read(), self.state)
+
+    def test_delete_verification_failure_rolls_back_tombstone(self):
+        original = sqlite3.connect
+
+        class DeleteReadFailure(sqlite3.Connection):
+            deleted = False
+
+            def execute(self, sql, parameters=()):
+                if self.deleted and sql.startswith("SELECT"):
+                    raise sqlite3.OperationalError("synthetic post-delete failure")
+                result = super().execute(sql, parameters)
+                if sql.startswith("UPDATE managed_decks SET lifecycle"):
+                    self.deleted = True
+                return result
+
+        with patch.object(store.sqlite3, "connect", side_effect=lambda *a, **kw:
+                          original(*a, factory=DeleteReadFailure, **kw)):
+            self.error("transaction_failed", self.delete)
+        self.assertEqual(self.read(), self.state)
 
 
 if __name__ == "__main__":

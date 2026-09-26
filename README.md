@@ -1072,11 +1072,72 @@ values supplied by external SQL before they are stored; the adapter validates
 the actual stored representation and does not claim to recover original SQL
 argument types. Direct SQL edits are unsupported.
 
-The accepted future revision rule is one increment per logical record-state
-change, including metadata; exact no-ops preserve it after precondition checks.
-Deletion will tombstone and reserve the UUID permanently; recreation uses a new
-UUID. This foundation recognizes tombstones but exposes no edit, replacement,
-CAS, deletion, undelete, restore, clone, move, or migration operation.
+Conditional storage mutation adds two APIs without changing schema or destination
+state version:
+
+* `conditional_replace(path, record_id, expected_destination_state,
+  replacement_deck, *, name, format_label)` returns exactly `status`
+  (`changed` or `unchanged`) and `destination_state`, a detached coherent live
+  observation. Both metadata arguments are required; `format_label=None`
+  explicitly clears the label. The replacement Deck supplies all three gameplay
+  zones; its name and source deck_id do not override explicit metadata/identity.
+* `conditional_delete(path, record_id, expected_destination_state)` returns
+  exactly `status: changed`, `lifecycle: deleted`, `store_id`, `store_generation`,
+  `record_id`, `previous_revision`, and `revision` after commit. This is an
+  immediate acknowledgment, not a live destination observation, durable receipt,
+  or future authorization input; no separate deletion-artifact verifier is added.
+
+Both accept a complete native or serialized observation through
+`require_destination_state`. The explicit target record_id must match that
+observation, including when another record has identical gameplay. This check
+does not authenticate destination selection: coherently supplying another
+target and its observation is not something this storage primitive can prohibit.
+
+Inside one `BEGIN IMMEDIATE` transaction, the adapter validates schema, rereads
+actual store ID/generation, requires a live record, checks exact revision, and
+independently recomputes and compares the gameplay baseline. Stored metadata must
+also match the expected observation. All checks precede no-op detection. Exact
+replacement deletes omitted old card rows and writes the full replacement;
+metadata and gameplay form one atomic update. The adapter rereads and verifies
+the complete result, gameplay identity, and revision before committing.
+
+Every successful logical state change increments revision exactly once,
+including name or format-label changes. Exact no-ops preserve revision and report
+`unchanged`; stale callers cannot use no-ops to refresh their observation. At the
+maximum signed-64-bit revision, state changes and deletion fail with
+`revision_exhausted`; a correctly matched no-op remains possible. Failed or
+conflicted operations do not advance revision. Record mutation never changes
+store_generation.
+
+Deletion tombstones the header and retains the last gameplay rows and metadata
+for inspection and future recovery design, while permanently reserving the UUID.
+Normal reads report `deleted_record`; listings exclude tombstones; replacement
+and repeated deletion reject them. Recreation always creates a new UUID. Retained
+contents do not provide an undelete path. Restore, clone, move, migration, and
+undelete operations remain absent.
+
+Mutation-specific error codes extend the foundation vocabulary:
+`malformed_expected`, `malformed_replacement`, `store_identity_mismatch`,
+`store_generation_mismatch`, `record_identity_mismatch`, `revision_mismatch`,
+`baseline_mismatch`, `metadata_mismatch`, `revision_exhausted`, `storage_busy`,
+`transaction_failed`, `commit_failed`, and `result_mismatch`. Missing/deleted,
+malformed, unsupported, and unavailable-store errors retain their existing
+meanings. Busy/locked errors are reported as `storage_busy`; other SQLite errors
+inside the mutation or commit phase report that phase without claiming a more
+specific cause. No success is returned before commit.
+
+Every supported writer must use these adapter preconditions and revision rules.
+Given competing state-changing writes from the same revision, at most one may
+succeed. SQLite lock waiting may serialize attempts; the adapter never refreshes
+expected state, merges, repairs, chooses another target, or retries a loser at a
+new revision. Direct SQL and undeclared file substitution remain unsupported.
+
+Transaction failure rolls back header and card changes together. A crash after
+commit but before acknowledgment may leave an unknown outcome. CAS prevents
+blind reuse of the old revision but does not prove which operation committed.
+There are no receipts or exactly-once guarantees. These are storage consistency
+primitives, not recommendation, approval, destination-selection intent, #6L
+execution authority, Application Intent, or proposal application.
 
 Continuity is application-managed only. In-file UUIDs cannot detect arbitrary
 external file copying, rollback, replacement, or coherent tampering. Future

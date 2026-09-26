@@ -1,4 +1,4 @@
-"""Application-managed local deck storage; no existing-record mutation API.
+"""Application-managed local deck storage and conditional storage mutations.
 
 In-file identities cannot detect external copying, rollback, or coherent
 tampering. Observations are historical values, not credentials or authority.
@@ -24,6 +24,10 @@ _ZONES = ("main", "sideboard", "commander")
 _ERRORS = frozenset({
     "missing_store", "unsupported_schema", "malformed_store", "unavailable_store",
     "missing_record", "deleted_record", "malformed_record", "invalid_input",
+    "malformed_expected", "malformed_replacement", "store_identity_mismatch",
+    "store_generation_mismatch", "record_identity_mismatch", "revision_mismatch",
+    "baseline_mismatch", "metadata_mismatch", "revision_exhausted",
+    "storage_busy", "transaction_failed", "commit_failed", "result_mismatch",
 })
 _SCHEMA = (
     """CREATE TABLE managed_store_meta (
@@ -202,8 +206,9 @@ def _schema(con):
 
 
 @contextmanager
-def _connection(path, *, write=False, initialize=False):
+def _connection(path, *, write=False, initialize=False, mutation=False):
     con = None
+    phase = "open"
     if not isinstance(path, (str, Path)) or not str(path):
         _fail("invalid_input")
     try:
@@ -221,10 +226,19 @@ def _connection(path, *, write=False, initialize=False):
         if write:
             con.execute("PRAGMA synchronous=FULL")
         con.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+        phase = "transaction"
         yield con
+        phase = "commit"
         con.commit()
     except sqlite3.Error as exc:
         code = getattr(exc, "sqlite_errorcode", 0) & 255
+        if mutation and code in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+            _fail("storage_busy")
+        if mutation and code not in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB):
+            if phase == "commit":
+                _fail("commit_failed")
+            if phase == "transaction":
+                _fail("transaction_failed")
         _fail("malformed_store" if code in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB) else "unavailable_store")
     except (OSError, TypeError):
         _fail("unavailable_store")
@@ -325,3 +339,93 @@ def list_destinations(path) -> list[dict]:
                     "record_id", "revision", "metadata",
                 )})
         return result
+
+
+def _expected(record_id, value):
+    _uuid(record_id, "invalid_input")
+    try:
+        expected = require_destination_state(value)
+    except ManagedDeckStoreError:
+        _fail("malformed_expected")
+    if record_id != expected["record_id"]:
+        _fail("record_identity_mismatch")
+    return expected
+
+
+def _current_for_mutation(con, expected):
+    meta = _schema(con)
+    if meta["store_id"] != expected["store_id"]:
+        _fail("store_identity_mismatch")
+    if meta["store_generation"] != expected["store_generation"]:
+        _fail("store_generation_mismatch")
+    current = _read(con, meta, expected["record_id"])
+    if current["revision"] != expected["revision"]:
+        _fail("revision_mismatch")
+    if current["gameplay_snapshot_identity"] != expected["gameplay_snapshot_identity"]:
+        _fail("baseline_mismatch")
+    if current["metadata"] != expected["metadata"]:
+        _fail("metadata_mismatch")
+    return meta, current
+
+
+def _next_revision(current):
+    if current["revision"] == MAX_INTEGER:
+        _fail("revision_exhausted")
+    return current["revision"] + 1
+
+
+def conditional_replace(path, record_id: str, expected_destination_state: dict,
+                        replacement_deck: Deck, *, name: str,
+                        format_label: str | None) -> dict:
+    """Replace exact contents/metadata under CAS; grants no application authority.
+
+    Both metadata arguments are required; None explicitly clears format_label.
+    Returns {status: changed|unchanged, destination_state: fresh observation}.
+    """
+    expected = _expected(record_id, expected_destination_state)
+    with _connection(path, write=True, mutation=True) as con:
+        meta, current = _current_for_mutation(con, expected)
+        metadata = _metadata(name, format_label, "malformed_replacement")
+        replacement = _deck(replacement_deck, name, "malformed_replacement")
+        identity = build_deck_snapshot_identity(replacement)
+        changed = metadata != current["metadata"] or identity != current["gameplay_snapshot_identity"]
+        revision = _next_revision(current) if changed else current["revision"]
+        if changed:
+            con.execute("UPDATE managed_decks SET revision=?, name=?, format_label=? WHERE record_id=?",
+                        (revision, name, format_label, record_id))
+            con.execute("DELETE FROM managed_deck_cards WHERE record_id=?", (record_id,))
+            con.executemany("INSERT INTO managed_deck_cards VALUES (?,?,?,?)", [
+                (record_id, zone, arena_id, quantity)
+                for zone in _ZONES for arena_id, quantity in getattr(replacement, zone).items()
+            ])
+        result = _read(con, meta, record_id)
+        wanted = {**current, "revision": revision, "deck": replacement,
+                  "metadata": metadata, "gameplay_snapshot_identity": identity}
+        if serialize_destination_state(result) != serialize_destination_state(wanted):
+            _fail("result_mismatch")
+    return {"status": "changed" if changed else "unchanged", "destination_state": result}
+
+
+def conditional_delete(path, record_id: str, expected_destination_state: dict) -> dict:
+    """Tombstone a matching live record, retaining its UUID and last contents.
+
+    The returned acknowledgment is not a durable receipt or a live observation.
+    """
+    expected = _expected(record_id, expected_destination_state)
+    with _connection(path, write=True, mutation=True) as con:
+        meta, current = _current_for_mutation(con, expected)
+        revision = _next_revision(current)
+        con.execute("UPDATE managed_decks SET lifecycle='deleted', revision=? WHERE record_id=?",
+                    (revision, record_id))
+        header = con.execute("SELECT * FROM managed_decks WHERE record_id=?", (record_id,)).fetchone()
+        rows = con.execute("SELECT zone, arena_id, quantity FROM managed_deck_cards WHERE record_id=?",
+                           (record_id,)).fetchall()
+        wanted_rows = sorted((zone, arena_id, quantity) for zone in _ZONES
+                             for arena_id, quantity in getattr(current["deck"], zone).items())
+        if dict(header) != {"record_id": record_id, "revision": revision, "lifecycle": "deleted",
+                            **current["metadata"]} or sorted(tuple(row) for row in rows) != wanted_rows:
+            _fail("result_mismatch")
+        result = {"status": "changed", "lifecycle": "deleted", "store_id": meta["store_id"],
+                  "store_generation": meta["store_generation"], "record_id": record_id,
+                  "previous_revision": current["revision"], "revision": revision}
+    return result
