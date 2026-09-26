@@ -1005,6 +1005,92 @@ or rerun proposal or recommendation work.
 python -m unittest tests.test_proposal_presentation tests.test_human_proposal_decision -v
 ```
 
+### Local managed deck store v1 foundation
+
+`mtgadb.managed_deck_store` owns a dedicated durable SQLite file for local
+editable deck destinations. It is separate from rebuildable `current.db` and
+the immutable Arena snapshot archive. It never adopts existing data, queries
+card knowledge, or treats an Arena/source deck ID as a managed destination ID.
+Choose an explicit private data-file path; no default store is silently created.
+
+The current path-based API is:
+
+* `initialize_store(path)` explicitly initializes an empty database transactionally,
+  or validates an existing managed store without replacing it.
+* `open_store(path)` validates an existing store and returns store metadata,
+  never a writable connection. Reads and creation against a missing store fail.
+* `create_managed_deck(path, deck, name, format_label=None)` generates a new
+  record UUID at revision 1 and stores all three zones atomically. Identical
+  decks and names may coexist. The input remains unchanged.
+* `read_destination_state(path, record_id)` returns one coherent observation.
+* `list_destinations(path)` returns live identity/metadata summaries ordered by
+  record UUID. Selection requires a fresh destination read afterward.
+* `require_destination_state(value)` verifies a native or serialized observation
+  and returns a detached native observation without accessing storage.
+* `serialize_destination_state(value)` verifies and returns a JSON-compatible
+  observation, representing each zone as sorted `[printing_id, quantity]` pairs.
+
+Schema version `1`, store kind `local_managed_decks`, has three closed tables:
+`managed_store_meta`, `managed_decks`, and `managed_deck_cards`. Store metadata
+contains persistent generated UUIDv4 `store_id` and `store_generation`. Records
+have generated UUIDv4 `record_id`, positive signed-64-bit revision, live/deleted
+lifecycle, name, and nullable format label. Card rows have a record foreign key
+and unique record/zone/printing key. IDs and quantities must be exact positive
+integers within SQLite's signed-64-bit range; booleans are rejected at the API.
+Foreign keys are enabled and checked on adapter connections. Unknown schemas,
+extra tables/columns/triggers, malformed values, and orphan rows fail closed.
+No gameplay digest is persisted.
+
+Identity layers remain distinct: `store_id + record_id` identifies the record;
+`store_generation + revision` describes its continuity period and observed
+state; unchanged Deck Snapshot Identity v1 describes gameplay only. Reopening
+preserves store identities. Creation always generates a fresh record UUID,
+ignoring the source Deck's ID. Returned Deck values have `deck_id=""` and the
+stored name. Format labels are selection hints, never legality evidence.
+
+Destination State Model version `1` contains `destination_state_version`,
+`store_id`, `store_generation`, `record_id`, `revision`, `deck`, `metadata`
+(exactly name and format_label), and `gameplay_snapshot_identity`. Native Deck
+values and all nested data are detached. Serialized Deck values have exactly
+deck_id, name, main, sideboard, and commander. Verification checks the closed
+shape, types, UUID forms, revision bounds, metadata agreement, and recomputed
+gameplay identity. It proves neither currentness nor that an observation came
+from the store; future writers must reread authoritative state.
+
+Every read uses one explicit SQLite transaction for metadata, header, and zone
+rows. Creation uses `BEGIN IMMEDIATE`, foreign-key enforcement, full synchronous
+durability, and a supported journal mode; success is returned only after commit.
+Failures roll back the complete creation. Failed initialization may leave an
+empty SQLite file, but no partial committed schema. No adapter connection escapes
+the operation. The store validates structural deck data, not gameplay legality;
+unknown positive printing IDs remain preserved.
+
+`ManagedDeckStoreError` is a `ValueError` with a closed `code`: `missing_store`,
+`unsupported_schema`, `malformed_store`, `unavailable_store`, `missing_record`,
+`deleted_record`, `malformed_record`, or `invalid_input`. SQLite may normalize
+values supplied by external SQL before they are stored; the adapter validates
+the actual stored representation and does not claim to recover original SQL
+argument types. Direct SQL edits are unsupported.
+
+The accepted future revision rule is one increment per logical record-state
+change, including metadata; exact no-ops preserve it after precondition checks.
+Deletion will tombstone and reserve the UUID permanently; recreation uses a new
+UUID. This foundation recognizes tombstones but exposes no edit, replacement,
+CAS, deletion, undelete, restore, clone, move, or migration operation.
+
+Continuity is application-managed only. In-file UUIDs cannot detect arbitrary
+external file copying, rollback, replacement, or coherent tampering. Future
+managed restore must change store generation; independent cloning must establish
+a new store identity. Paths are locators, not identities. This is neither
+tamper-proof nor rollback-proof storage, authentication, or cryptographic
+provenance. There is no external continuity authority, Application Intent,
+proposal application, operation receipt, spending/crafting authority, Arena
+account binding, synchronization, or Arena mutation.
+
+```powershell
+python -m unittest tests.test_managed_deck_store -v
+```
+
 ### Pre-execution revalidation (Pass #6L)
 
 Pre-Execution Revalidation Model Version 1 checks one exact approved add-one
