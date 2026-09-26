@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, fields
 import hashlib
 import json
 import sqlite3
 from typing import Any
 
-from mtgadb.deck_identity import build_deck_snapshot_identity
+from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snapshot_identity
 from mtgadb.model import Collection, Deck, Format, Inventory
 from mtgadb.modes import OperatingMode
 from services.human_proposal_decision import require_human_proposal_decision
@@ -179,6 +179,234 @@ def _resource_assessment(mode: OperatingMode, validation: dict) -> dict:
         "wildcard_cost": wildcard_cost,
         "spending_authorized": False,
     }
+
+
+def _closed(value: Any, expected: set[str], label: str) -> dict:
+    if type(value) is not dict or set(value) != expected:
+        raise ValueError(f"{label} has missing or unsupported fields")
+    return value
+
+
+def _same(left: Any, right: Any) -> bool:
+    return _encoded(left) == _encoded(right)
+
+
+def _require_json(value: Any) -> None:
+    # Reject Python-only representations (including tuple/list substitutions)
+    # before canonical JSON comparisons erase those distinctions.
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ValueError("revalidation object keys must be strings")
+            _require_json(item)
+    elif type(value) is list:
+        for item in value:
+            _require_json(item)
+    elif value is not None and type(value) not in (str, int, float, bool):
+        raise ValueError("revalidation artifact must contain JSON values")
+
+
+def _require_current_context(value: Any) -> dict:
+    context = _closed(value, {"mode", "format", "rules"}, "current validation context")
+    format_args = deepcopy(_closed(
+        context["format"], {field.name for field in fields(Format)}, "current format",
+    ))
+    rules_args = deepcopy(_closed(
+        context["rules"], {field.name for field in fields(DeckRules)}, "current rules",
+    ))
+
+    def frozen(raw: Any) -> frozenset:
+        if type(raw) is not list:
+            raise ValueError("canonical set must be a list")
+        return frozenset(raw)
+
+    for key in ("legal_sets", "filter_sets", "banned_title_ids",
+                "suppressed_title_ids", "suspended_title_ids"):
+        format_args[key] = frozen(format_args[key])
+    for key in ("allowed_title_ids", "allowed_commander_title_ids"):
+        if format_args[key] is not None:
+            format_args[key] = frozen(format_args[key])
+    for key in ("individual_card_quotas", "rarity_card_quotas"):
+        raw = format_args[key]
+        if type(raw) is not list or any(type(pair) is not list or len(pair) != 2 for pair in raw):
+            raise ValueError("canonical quota map must contain pairs")
+        format_args[key] = dict(raw)
+    restrictions = format_args["color_restrictions_internal"]
+    if type(restrictions) is not list:
+        raise ValueError("canonical color restrictions must be a list")
+    format_args["color_restrictions_internal"] = tuple(frozen(item) for item in restrictions)
+    if rules_args["allowed_colors"] is not None:
+        rules_args["allowed_colors"] = frozen(rules_args["allowed_colors"])
+    normalized = canonical_validation_context(
+        format=Format(**format_args), rules=DeckRules(**rules_args),
+        mode=OperatingMode(context["mode"]),
+    )
+    if not _same(value, normalized):
+        raise ValueError("current validation context is not canonical")
+    return normalized
+
+
+def _require_fresh_validation(value: Any) -> dict:
+    report = _closed(value, {"valid", "errors", "warnings", "wildcard_cost"}, "fresh validation")
+    for key in ("errors", "warnings"):
+        if type(report[key]) is not list:
+            raise ValueError("validation issues must be lists")
+        for issue in report[key]:
+            _closed(issue, {"code", "message", "zone", "title_id"}, "validation issue")
+            if any(type(issue[field]) is not str for field in ("code", "message")) or (
+                issue["zone"] is not None and issue["zone"] not in _ZONES
+            ) or (issue["title_id"] is not None and type(issue["title_id"]) is not int):
+                raise ValueError("validation issue is malformed")
+        if not _same(report[key], sorted(report[key], key=_encoded)):
+            raise ValueError("validation issues are not canonical")
+    if type(report["valid"]) is not bool or report["valid"] != (not report["errors"]):
+        raise ValueError("validation validity contradicts errors")
+    cost = report["wildcard_cost"]
+    if type(cost) is not dict or any(
+        not rarity or type(quantity) is not int or quantity < 0
+        for rarity, quantity in cost.items()
+    ):
+        raise ValueError("validation wildcard cost is malformed")
+    return deepcopy(report)
+
+
+def require_pre_execution_revalidation(value: dict) -> dict:
+    """Verify historical v1 evidence and return a detached copy.
+
+    This does not consult current state, rerun validation, authenticate the
+    evidence, or grant any authority. Negative results retain null identities.
+    """
+    try:
+        _require_json(value)
+        _encoded(value)  # Also reject non-finite numbers.
+        return _require_revalidation(value)
+    except (TypeError, KeyError, IndexError, RecursionError) as exc:
+        raise ValueError("pre-execution revalidation artifact is malformed") from exc
+
+
+def _require_revalidation(value: dict) -> dict:
+    _closed(value, set(_result("", "")), "pre-execution revalidation")
+    reason = value["reason"]
+    statuses = {
+        "fresh_validation_passed": "revalidated",
+        "decision_declined": "not_ready",
+        "baseline_snapshot_mismatch": "not_ready",
+        "current_printing_unavailable": "not_ready",
+        "current_printing_identity_mismatch": "not_ready",
+        "current_validation_failed": "not_ready",
+        "resource_authorization_required": "not_ready",
+        "malformed_input": "rejected", "unsupported_version": "rejected",
+        "identity_mismatch": "rejected", "result_identity_mismatch": "rejected",
+        "validation_unavailable": "rejected",
+    }
+    if type(reason) is not str or reason not in statuses or value["status"] != statuses[reason]:
+        raise ValueError("revalidation status/reason is unsupported or contradictory")
+    args = {}
+
+    def finish() -> dict:
+        expected = _result(statuses[reason], reason, **args)
+        if not _same(value, expected):
+            raise ValueError("revalidation artifact contradicts its verified evidence or stage")
+        return deepcopy(expected)
+
+    def diagnostic() -> None:
+        if type(value["evidence"]) is not str:
+            raise ValueError("rejected outcome requires diagnostic text")
+        args["evidence"] = value["evidence"]
+
+    if value["source_human_proposal_decision"] is None:
+        if reason not in ("malformed_input", "unsupported_version", "identity_mismatch"):
+            raise ValueError("outcome requires a verified human decision")
+        diagnostic()
+        return finish()
+    decision = require_human_proposal_decision(value["source_human_proposal_decision"])
+    args["decision"] = decision
+    if decision["decision"] == "declined":
+        if reason != "decision_declined":
+            raise ValueError("declined decision cannot proceed to revalidation")
+        return finish()
+    proposal = decision["proposal_identity"]["canonical_payload"]
+    delta = proposal["delta"]
+    args["delta"] = delta
+    if reason == "malformed_input" and value["current_baseline_deck_identity"] is None:
+        diagnostic()
+        return finish()
+    baseline = require_deck_snapshot_identity(value["current_baseline_deck_identity"])
+    args["baseline_identity"] = baseline
+    if not _same(baseline, proposal["source_baseline_deck_identity"]):
+        if reason != "baseline_snapshot_mismatch":
+            raise ValueError("current baseline contradicts reviewed baseline")
+        args["evidence"] = {
+            "approved_digest": proposal["source_baseline_deck_identity"]["digest"],
+            "current_digest": baseline["digest"],
+        }
+        return finish()
+    zones = {zone: dict(baseline["canonical_payload"][zone]) for zone in _ZONES}
+    zone = zones[delta["zone"]]
+    zone[delta["arena_id"]] = zone.get(delta["arena_id"], 0) + delta["quantity"]
+    reconstructed = build_deck_snapshot_identity(Deck(**zones))
+    if not _same(reconstructed, proposal["resulting_deck_identity"]):
+        raise ValueError("approved result contradicts independently reconstructed delta")
+    result = require_deck_snapshot_identity(value["reconstructed_result_deck_identity"])
+    args["result_identity"] = result
+    if reason == "result_identity_mismatch":
+        # This diagnostic reports a failed reconstruction; it does not endorse
+        # the reported result as the correct application of the approved delta.
+        if _same(result, reconstructed):
+            raise ValueError("result mismatch diagnostic reports a matching result")
+        args["evidence"] = {
+            "approved_digest": reconstructed["digest"], "reconstructed_digest": result["digest"],
+        }
+        return finish()
+    if not _same(result, reconstructed):
+        raise ValueError("result contradicts independently reconstructed delta")
+    if reason == "malformed_input":
+        diagnostic()
+        return finish()
+    context = _require_current_context(value["current_validation_context"])
+    args["validation_context"] = context
+    printing = value["current_printing_fact"]
+    if printing is None:
+        if reason == "validation_unavailable":
+            diagnostic()
+        elif reason != "current_printing_unavailable":
+            raise ValueError("outcome requires current printing evidence")
+        return finish()
+    _closed(printing, {"arena_id", "title_id", "name", "set_code", "collector_number", "rarity"}, "printing fact")
+    if not _same(printing["arena_id"], delta["arena_id"]) or any(
+        type(printing[key]) is not str for key in ("name", "set_code", "collector_number", "rarity")
+    ) or not printing["name"]:
+        raise ValueError("current printing fact is malformed or contradicts approved printing")
+    args["printing_fact"] = printing
+    if not _same(printing["title_id"], delta["title_id"]):
+        if reason != "current_printing_identity_mismatch":
+            raise ValueError("current printing title contradicts approved title")
+        args["evidence"] = {"approved_title_id": delta["title_id"], "current_title_id": printing["title_id"]}
+        return finish()
+    if reason == "validation_unavailable":
+        diagnostic()
+        return finish()
+    validation = _require_fresh_validation(value["fresh_validation"])
+    resource = _resource_assessment(OperatingMode(context["mode"]), validation)
+    args.update(validation=validation, resource_assessment=resource)
+    expected_reason = (
+        "current_validation_failed" if not validation["valid"] else
+        "resource_authorization_required" if resource["resource_status"] == "affordable_spend_not_authorized"
+        else "fresh_validation_passed"
+    )
+    if reason != expected_reason:
+        raise ValueError("outcome contradicts validation or resource assessment")
+    if reason == "fresh_validation_passed":
+        expected = _result("revalidated", reason, **args)
+        payload_fields = {
+            "pre_execution_revalidation_model_version", "status", "reason",
+            "human_proposal_decision_identity", "proposal_identity", "presentation_identity",
+            "approved_delta", "current_baseline_deck_identity", "reconstructed_result_deck_identity",
+            "current_validation_context", "current_printing_fact", "fresh_validation",
+            "resource_assessment", "destination_assessment",
+        }
+        args["revalidation_identity"] = _identity({key: expected[key] for key in payload_fields})
+    return finish()
 
 
 def build_pre_execution_revalidation(

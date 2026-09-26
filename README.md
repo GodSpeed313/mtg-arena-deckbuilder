@@ -1096,6 +1096,32 @@ wildcard-cost keys are normalized for deterministic evidence. No timestamps or
 arbitrary expiry are added. Non-positive results have a null revalidation
 identity.
 
+Pass #6M-A adds the #6L-owned public verifier
+`services.pre_execution_revalidation.require_pre_execution_revalidation(artifact)`.
+It returns a detached copy of a complete, internally consistent v1 artifact or
+raises `ValueError`. It delegates the embedded decision to the #6K verifier and
+its #6J chain, derives the approved delta from verified proposal semantics,
+independently reconstructs the expected gameplay result, reconciles repeated
+evidence using type-sensitive canonical comparisons, and recomputes the positive
+identity and digest. Closed shapes, canonical current context, validation issues,
+resource assessments, status/reason pairs, deferred destination, and fixed
+limitations are checked. Unsupported versions, algorithms, unknown fields, and
+contradictions fail closed even when only the outer identity is rehashed.
+
+Supported negative outcomes retain only evidence through their failing stage
+and keep a null revalidation identity. A `result_identity_mismatch` diagnostic
+must report a result different from the independently reconstructed approved
+result; verifying that diagnostic does not endorse its reported result as the
+correct delta application. Early rejection diagnostics cannot independently
+prove the discarded invalid input or the original failure occurred. Negative
+artifacts are not digest-bound, and even positive digests are mismatch detection,
+not authentication: coherent replacement of historical evidence is not proof of
+its origin. Verification checks historical internal consistency without database,
+validator, filesystem, or network access. It establishes no current Deck,
+legality, database, Format/DeckRules, collection, wildcard, or destination state,
+and grants no spending, crafting, execution, persistence, export, or Arena
+mutation authority. Destination binding remains deferred.
+
 `revalidated` is readiness evidence only, not execution authorization or a
 capability token. Digests detect mismatches; they do not authenticate a human,
 prove consent, or act as signatures. This service does not mutate an authoritative

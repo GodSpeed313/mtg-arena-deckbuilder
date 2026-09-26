@@ -15,7 +15,9 @@ from mtgadb.modes import OperatingMode
 from services.human_proposal_decision import (
     build_human_proposal_decision, require_human_proposal_decision,
 )
-from services.pre_execution_revalidation import build_pre_execution_revalidation
+from services.pre_execution_revalidation import (
+    build_pre_execution_revalidation, require_pre_execution_revalidation,
+)
 from services.proposal_presentation import build_proposal_presentation
 from services.validator import ValidationIssue, ValidationReport, validate_deck
 from tests import test_proposal_presentation as presentation_tests
@@ -557,6 +559,282 @@ class PreExecutionRevalidationTests(unittest.TestCase):
         for phrase in ("not execution authorization", "time-of-check/time-of-use",
                        "not authentication", "does not authorize", "immediately before mutation"):
             self.assertIn(phrase, limitations)
+
+
+class PreExecutionRevalidationVerifierTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = PreExecutionRevalidationTests(methodName="runTest")
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.artifact = self.fixture.evaluate()
+
+    def verify(self, artifact):
+        before = deepcopy(artifact)
+        actual = require_pre_execution_revalidation(artifact)
+        self.assertEqual(actual, artifact)
+        self.assertEqual(before, artifact)
+        self.assertIsNot(actual, artifact)
+        if artifact["status"] != "revalidated":
+            self.assertIsNone(actual["pre_execution_revalidation_identity"])
+        return actual
+
+    def changed(self, path, replacement, *, rebind=False):
+        value = deepcopy(self.artifact)
+        target = value
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = replacement
+        if rebind:
+            identity = value["pre_execution_revalidation_identity"]
+            identity["canonical_payload"] = {
+                key: deepcopy(value[key]) for key in identity["canonical_payload"]
+            }
+            rehash(identity)
+        return value
+
+    def reject(self, value):
+        before = deepcopy(value)
+        with self.assertRaises(ValueError):
+            require_pre_execution_revalidation(value)
+        self.assertEqual(before, value)
+
+    def test_positive_and_repeat(self):
+        self.verify(self.artifact)
+        self.assertEqual(self.artifact, self.fixture.evaluate())
+        self.verify(self.fixture.evaluate())
+
+    def test_all_positive_resource_modes(self):
+        self.verify(self.fixture.budget())
+        self.verify(self.fixture.evaluate(mode=OperatingMode.FULL_COLLECTION,
+                                          collection=self.fixture.owned))
+
+    def test_detached_copy_and_serialization(self):
+        verified = self.verify(json.loads(json.dumps(self.artifact)))
+        verified["approved_delta"]["quantity"] = 99
+        self.assertEqual(self.artifact["approved_delta"]["quantity"], 1)
+        self.verify(deepcopy(self.artifact))
+
+    def test_dictionary_order_is_nonsemantic(self):
+        def reverse(value):
+            if isinstance(value, dict):
+                return {key: reverse(item) for key, item in reversed(list(value.items()))}
+            if isinstance(value, list):
+                return [reverse(item) for item in value]
+            return value
+        self.verify(reverse(self.artifact))
+
+    def test_no_external_or_validation_calls(self):
+        with ExitStack() as stack:
+            for name in (SERVICE + "validate_deck", SERVICE + "build_pre_execution_revalidation",
+                         "sqlite3.connect", "builtins.open", "socket.socket",
+                         "services.exporter.export_arena_deck", "mtgadb.snapshot_store.save_snapshot"):
+                stack.enter_context(patch(name, side_effect=AssertionError(name)))
+            self.verify(self.artifact)
+
+    def test_embedded_decision_uses_owning_verifier(self):
+        with patch(SERVICE + "require_human_proposal_decision",
+                   wraps=require_human_proposal_decision) as verifier:
+            self.verify(self.artifact)
+        verifier.assert_called_once_with(self.artifact["source_human_proposal_decision"])
+
+    def test_versions_algorithms_digests_payload(self):
+        identity = "pre_execution_revalidation_identity"
+        for path, replacement in (
+            (("pre_execution_revalidation_model_version",), "2"),
+            ((identity, "pre_execution_revalidation_identity_version"), "2"),
+            ((identity, "digest_algorithm"), "sha512"),
+            ((identity, "digest"), "0" * 64),
+            ((identity, "canonical_payload", "status"), "not_ready"),
+        ):
+            with self.subTest(path=path):
+                self.reject(self.changed(path, replacement))
+
+    def test_embedded_chain_tampering(self):
+        source = "source_human_proposal_decision"
+        for path, replacement in (
+            ((source, "decision"), "declined"),
+            ((source, "decision_source", "provenance", "reference"), "other person"),
+            ((source, "source_presentation", "review_artifact", "limitations"), []),
+            ((source, "proposal_identity", "digest"), "0" * 64),
+            (("human_proposal_decision_identity", "digest"), "0" * 64),
+            (("presentation_identity", "digest"), "0" * 64),
+            (("proposal_identity", "digest"), "0" * 64),
+        ):
+            with self.subTest(path=path):
+                self.reject(self.changed(path, replacement, rebind=True))
+
+    def test_exact_delta_rejects_rehashed_replacement(self):
+        for key, replacement in (("arena_id", 102), ("title_id", 2), ("zone", "sideboard"),
+                                 ("quantity", 2), ("operation", "remove"), ("name", "Other")):
+            with self.subTest(key=key):
+                self.reject(self.changed(("approved_delta", key), replacement, rebind=True))
+
+    def test_baseline_and_result_tampering(self):
+        for field in ("current_baseline_deck_identity", "reconstructed_result_deck_identity"):
+            self.reject(self.changed((field, "digest"), "0" * 64, rebind=True))
+            self.reject(self.changed((field,), build_deck_snapshot_identity(Deck()), rebind=True))
+
+    def test_printing_tampering(self):
+        for key, value in (("arena_id", 102), ("title_id", 2), ("name", ""), ("rarity", 1)):
+            self.reject(self.changed(("current_printing_fact", key), value, rebind=True))
+        self.reject(self.changed(("current_printing_fact", "name"), "Altered name"))
+
+    def test_validation_contradictions_even_when_rehashed(self):
+        for key, value in (("valid", False), ("errors", [{"code": "bad", "message": "bad",
+                            "zone": None, "title_id": None}]), ("wildcard_cost", {"common": True}),
+                           ("warnings", [{"code": "bad"}])):
+            self.reject(self.changed(("fresh_validation", key), value, rebind=True))
+
+    def test_resource_contradictions_even_when_rehashed(self):
+        for key, value in (("spending_authorized", True), ("resource_status", "no_spend_required"),
+                           ("resource_mode", "full_collection"), ("wildcard_cost", {"common": 1})):
+            self.reject(self.changed(("resource_assessment", key), value, rebind=True))
+
+    def test_status_reason_and_missing_identity(self):
+        for key, value in (("status", "not_ready"), ("reason", "current_validation_failed"),
+                           ("pre_execution_revalidation_identity", None)):
+            self.reject(self.changed((key,), value))
+
+    def test_fixed_non_authorities_even_when_rehashed(self):
+        self.reject(self.changed(("destination_assessment", "destination_status"), "bound", rebind=True))
+        self.reject(self.changed(("destination_assessment", "destination_reason"), "selected", rebind=True))
+        self.reject(self.changed(("limitations",), []))
+
+    def test_unknown_fields_at_closed_boundaries(self):
+        for path in ((), ("pre_execution_revalidation_identity",),
+                     ("pre_execution_revalidation_identity", "canonical_payload"),
+                     ("current_validation_context",), ("current_validation_context", "format"),
+                     ("current_validation_context", "rules"), ("fresh_validation",),
+                     ("resource_assessment",), ("destination_assessment",),
+                     ("current_printing_fact",), ("approved_delta",)):
+            self.reject(self.changed(path + ("unexpected",), True))
+
+    def test_type_confusion_rehashed(self):
+        for path in (("approved_delta", "quantity"), ("current_printing_fact", "title_id"),
+                     ("current_validation_context", "rules", "copy_limit")):
+            for value in (True, 1.0, "1"):
+                with self.subTest(path=path, value=value):
+                    self.reject(self.changed(path, value, rebind=True))
+        for value in (0, 0.0, "false"):
+            self.reject(self.changed(("resource_assessment", "spending_authorized"), value, rebind=True))
+        self.reject(self.changed(("fresh_validation", "valid"), 1, rebind=True))
+        self.reject(self.changed(("limitations",), tuple(self.artifact["limitations"])))
+
+    def test_current_context_rejects_noncanonical_or_malformed(self):
+        for path, value in (
+            (("mode",), "unsupported"), (("rules", "max_main"), -1),
+            (("format", "legal_sets"), ["AAA", "AAA"]),
+            (("format", "individual_card_quotas"), [[1, 1], [1, 1]]),
+            (("format", "banned_title_ids"), [True]),
+            (("format", "color_restrictions_internal"), "bad"),
+        ):
+            self.reject(self.changed(("current_validation_context",) + path, value, rebind=True))
+
+    def test_declined_negative_and_forbidden_later_evidence(self):
+        decision = build_human_proposal_decision(self.fixture.presentation, decision_spec("declined"))
+        value = self.fixture.evaluate(human_decision=decision)
+        self.verify(value)
+        for field in ("approved_delta", "fresh_validation", "pre_execution_revalidation_identity"):
+            changed = deepcopy(value)
+            changed[field] = deepcopy(self.artifact[field])
+            self.reject(changed)
+
+    def test_source_rejections(self):
+        for decision in (None, {}, {**self.fixture.decision, "human_proposal_decision_model_version": "2"},
+                         {**self.fixture.decision, "proposal_identity": {}}):
+            self.verify(self.fixture.evaluate(human_decision=decision))
+
+    def test_malformed_input_stages(self):
+        for overrides in ({"current_baseline_deck": None}, {"format": None},
+                          {"collection": {}}, {"inventory": {}},
+                          {"rules": replace(self.fixture.rules, copy_limit=0)}):
+            self.verify(self.fixture.evaluate(**overrides))
+
+    def test_baseline_mismatch_diagnostic(self):
+        value = self.fixture.evaluate(current_baseline_deck=Deck())
+        self.verify(value)
+        value["evidence"]["current_digest"] = "0" * 64
+        self.reject(value)
+
+    def test_result_mismatch_diagnostic(self):
+        with patch(SERVICE + "build_deck_snapshot_identity", side_effect=[
+            build_deck_snapshot_identity(self.fixture.deck), build_deck_snapshot_identity(Deck()),
+        ]):
+            value = self.fixture.evaluate()
+        self.verify(value)
+        value["reconstructed_result_deck_identity"] = deepcopy(self.artifact["reconstructed_result_deck_identity"])
+        self.reject(value)
+
+    def test_validation_unavailable_before_and_after_printing(self):
+        self.verify(self.fixture.evaluate(con=None))
+        with patch(SERVICE + "validate_deck", side_effect=ValueError("unavailable")):
+            value = self.fixture.evaluate()
+        self.verify(value)
+
+    def test_printing_unavailable(self):
+        self.fixture.con.execute("DELETE FROM printings WHERE arena_id = 101")
+        self.verify(self.fixture.evaluate())
+
+    def test_printing_title_mismatch(self):
+        self.fixture.con.execute("UPDATE printings SET title_id = 2 WHERE arena_id = 101")
+        value = self.fixture.evaluate()
+        self.verify(value)
+        value["evidence"]["current_title_id"] = True
+        self.reject(value)
+
+    def test_validation_failed_all_modes(self):
+        for mode in OperatingMode:
+            value = self.fixture.evaluate(mode=mode, rules=replace(self.fixture.rules, min_main=60))
+            self.verify(value)
+            self.assertEqual(value["reason"], "current_validation_failed")
+
+    def test_affordable_spend_remains_negative(self):
+        value = self.fixture.budget(collection=Collection({}))
+        self.verify(value)
+        self.assertEqual(value["reason"], "resource_authorization_required")
+        value["status"], value["reason"] = "revalidated", "fresh_validation_passed"
+        self.reject(value)
+
+    def test_canonical_warnings_and_errors(self):
+        a, b = ValidationIssue("a", "First"), ValidationIssue("b", "Second")
+        for report in (ValidationReport(warnings=(b, a)), ValidationReport(errors=(b, a))):
+            with patch(SERVICE + "validate_deck", return_value=report):
+                value = self.fixture.evaluate()
+            self.verify(value)
+            key = "warnings" if report.valid else "errors"
+            value["fresh_validation"][key].reverse()
+            self.reject(value)
+
+    def test_reconstructs_each_approved_zone(self):
+        for zone in ("main", "sideboard", "commander"):
+            proposal = self.fixture.fixture.accepted(target=zone)
+            decision = build_human_proposal_decision(build_proposal_presentation(proposal), decision_spec())
+            self.verify(self.fixture.evaluate(human_decision=decision))
+
+    def test_negative_stages_reject_extra_evidence_and_identity(self):
+        negatives = [self.fixture.evaluate(human_decision={}),
+                     self.fixture.evaluate(current_baseline_deck=None),
+                     self.fixture.evaluate(current_baseline_deck=Deck()),
+                     self.fixture.evaluate(format=None), self.fixture.evaluate(con=None),
+                     self.fixture.budget(collection=Collection({})),
+                     self.fixture.budget(inventory=None)]
+        for value in negatives:
+            for key in ("pre_execution_revalidation_identity", "fresh_validation", "current_printing_fact"):
+                if value[key] is None:
+                    if key == "current_printing_fact" and value["reason"] == "validation_unavailable":
+                        continue  # This outcome legitimately occurs before or after lookup.
+                    changed = deepcopy(value)
+                    changed[key] = deepcopy(self.artifact[key])
+                    self.reject(changed)
+
+    def test_missing_fields_and_nonjson_shapes(self):
+        for key in self.artifact:
+            value = deepcopy(self.artifact)
+            del value[key]
+            self.reject(value)
+        for value in (None, [], "artifact", {"reason": []}):
+            with self.assertRaises(ValueError):
+                require_pre_execution_revalidation(value)
 
 
 if __name__ == "__main__":
