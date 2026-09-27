@@ -1287,6 +1287,71 @@ python test_mtgadb.py
 git diff --check
 ```
 
+## Local Deck Application Intent Model v1 (pass #6N)
+
+`services.local_deck_application_intent.build_local_deck_application_intent(pre_execution_revalidation, destination_state, request_spec)`
+records one positive, in-memory intent or raises `ValueError`. It delegates to
+the public #6L and managed destination verifiers, retains their complete verified
+evidence, and requires an approved, successfully revalidated exact one-copy add.
+The #6L destination assessment remains `deferred / no_destination_contract`.
+
+The closed request has `request: apply`, a `request_source` containing `kind`
+(`explicit_user` or `explicit_operator`) and `provenance: {reference: ...}`, and
+`selected_destination`. The reference is stripped and must be non-empty; it is
+a caller declaration, not authentication or consent proof. Selection explicitly
+matches `store_id`, `store_generation`, `record_id`, `revision`, and
+`gameplay_snapshot_identity`, type-sensitively. Matching names or gameplay alone
+cannot select a record. The selected baseline must also match #6L and Proposal
+Identity. The exact approved printing, zone, quantity, title and need are derived
+from that proposal, with no caller overrides.
+
+Eligible historical resource evidence is exactly `full_collection /
+owned_no_crafting_required` or `wildcard_budget / no_spend_required`, with
+`spending_authorized: false`, matching validation mode and cost mappings, and
+exact nonnegative integer costs totaling zero (booleans are rejected). This is
+evidence under the retained validator rules, not proof of current ownership,
+wildcard balances or account state. Legitimate validation warnings are retained.
+The verified upstream construction guarantee rejects truncated candidate pools;
+#6N cannot independently reconstruct or re-prove the discarded original pool
+evidence and adds no completeness field.
+
+The builder reconstructs the prospective gameplay result on detached zones,
+checks positive signed 64-bit storage bounds, and reconciles both upstream result
+identities. The artifact includes no mutable resulting Deck. Complete canonical
+destination state binds name and nullable format label; fixed scope is
+`managed_local_deck / no_spend_only / preserve_destination_metadata`. A subsequent
+metadata change advances destination revision and makes the intent stale for
+future execution. Filesystem paths are excluded from the artifact and identity.
+
+The closed artifact uses model version `1`, `status: intent_recorded`, and
+`reason: explicit_local_application_requested`. It retains #6L, canonical
+destination state, normalized request, derived action, expected result identity,
+fixed scope and ordered limitations. Local Deck Application Intent Identity v1
+binds these semantics through the complete #6L identity and destination state,
+using SHA-256 over canonical UTF-8 JSON (sorted keys, compact separators,
+preserved Unicode, no non-finite numbers). Failed construction has no artifact
+or identity. Existing contract versions are unchanged.
+
+`services.local_deck_application_intent.require_local_deck_application_intent(value)`
+rebuilds the complete artifact and identity, rejects unknown fields, unsupported
+versions, tampering, noncanonical requests and type confusion, and returns a
+detached canonical artifact. Verification establishes historical internal
+consistency only: a valid stale intent still verifies. A coherently rewritten
+and rehashed artifact may remain valid. Digests provide mismatch detection, not
+signatures, bearer credentials, capability tokens, freshness, currentness,
+execution authority, replay protection or exactly-once protection.
+
+Both APIs perform no filesystem, database, network, validator or mutation calls.
+They do not execute, persist, advance revision, issue receipts, export, craft,
+spend wildcards or grant Arena authority. A future trusted invocation must resolve
+the physical store by internal ID/generation, reread authoritative current state,
+revalidate the exact action and no-spend evidence, and preserve destination
+metadata. That atomic application boundary remains deferred.
+
+```powershell
+python -m unittest tests.test_local_deck_application_intent -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell
