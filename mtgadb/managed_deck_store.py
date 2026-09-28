@@ -10,6 +10,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
+import sys
 from uuid import UUID, uuid4
 
 from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snapshot_identity
@@ -69,7 +70,7 @@ class ManagedDeckStoreError(ValueError):
 
 
 def _fail(code):
-    raise ManagedDeckStoreError(code)
+    raise ManagedDeckStoreError(code) from None
 
 
 def _uuid(value, code):
@@ -244,11 +245,20 @@ def _connection(path, *, write=False, initialize=False, mutation=False):
         _fail("unavailable_store")
     finally:
         if con is not None:
+            failing = sys.exc_info()[0] is not None
+            cleanup_failed = False
             try:
                 if con.in_transaction:
                     con.rollback()
+            except sqlite3.Error:
+                cleanup_failed = True
             finally:
-                con.close()
+                try:
+                    con.close()
+                except sqlite3.Error:
+                    cleanup_failed = True
+            if cleanup_failed and not failing:
+                _fail("commit_failed" if mutation and phase == "commit" else "unavailable_store")
 
 
 def initialize_store(path) -> dict:
@@ -374,6 +384,25 @@ def _next_revision(current):
     return current["revision"] + 1
 
 
+def _replace_in_transaction(con, meta, current, replacement, metadata, revision):
+    """Private write/reread only: caller owns validation, transaction and commit."""
+    record_id = current["record_id"]
+    identity = build_deck_snapshot_identity(replacement)
+    con.execute("UPDATE managed_decks SET revision=?, name=?, format_label=? WHERE record_id=?",
+                (revision, metadata["name"], metadata["format_label"], record_id))
+    con.execute("DELETE FROM managed_deck_cards WHERE record_id=?", (record_id,))
+    con.executemany("INSERT INTO managed_deck_cards VALUES (?,?,?,?)", [
+        (record_id, zone, arena_id, quantity)
+        for zone in _ZONES for arena_id, quantity in getattr(replacement, zone).items()
+    ])
+    result = _read(con, meta, record_id)
+    wanted = {**current, "revision": revision, "deck": replacement,
+              "metadata": metadata, "gameplay_snapshot_identity": identity}
+    if serialize_destination_state(result) != serialize_destination_state(wanted):
+        _fail("result_mismatch")
+    return result
+
+
 def conditional_replace(path, record_id: str, expected_destination_state: dict,
                         replacement_deck: Deck, *, name: str,
                         format_label: str | None) -> dict:
@@ -391,14 +420,9 @@ def conditional_replace(path, record_id: str, expected_destination_state: dict,
         changed = metadata != current["metadata"] or identity != current["gameplay_snapshot_identity"]
         revision = _next_revision(current) if changed else current["revision"]
         if changed:
-            con.execute("UPDATE managed_decks SET revision=?, name=?, format_label=? WHERE record_id=?",
-                        (revision, name, format_label, record_id))
-            con.execute("DELETE FROM managed_deck_cards WHERE record_id=?", (record_id,))
-            con.executemany("INSERT INTO managed_deck_cards VALUES (?,?,?,?)", [
-                (record_id, zone, arena_id, quantity)
-                for zone in _ZONES for arena_id, quantity in getattr(replacement, zone).items()
-            ])
-        result = _read(con, meta, record_id)
+            result = _replace_in_transaction(con, meta, current, replacement, metadata, revision)
+        else:
+            result = _read(con, meta, record_id)
         wanted = {**current, "revision": revision, "deck": replacement,
                   "metadata": metadata, "gameplay_snapshot_identity": identity}
         if serialize_destination_state(result) != serialize_destination_state(wanted):

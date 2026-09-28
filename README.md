@@ -1346,10 +1346,162 @@ They do not execute, persist, advance revision, issue receipts, export, craft,
 spend wildcards or grant Arena authority. A future trusted invocation must resolve
 the physical store by internal ID/generation, reread authoritative current state,
 revalidate the exact action and no-spend evidence, and preserve destination
-metadata. That atomic application boundary remains deferred.
+metadata. The separate #6O boundary below implements this for a designated local
+authority; #6N itself remains non-executable.
 
 ```powershell
 python -m unittest tests.test_local_deck_application_intent -v
+```
+
+## Atomic Local Deck Application v1 (pass #6O)
+
+The operator-selected execution scope is **guarded local validation authority**.
+This establishes consistency against the application's explicitly designated
+local inputs through the managed-deck commit. It does not prove live Arena
+ownership, wildcard balances, account state, or synchronization with Arena at
+commit time. Writers outside the synchronization mechanism are not protected.
+
+### Designated local authority v1
+
+`services.local_execution_validation.LocalExecutionValidationAuthorityV1` owns
+one process-local, complete published validation context. Its constructor and
+`publish(...)` require the keyword arguments `card_database_path`, `collection`,
+`format`, `rules`, `mode`, and optional `inventory`. `close()` retires the
+authority, waiting for active execution first. These are the only public
+authority operations; no public connection, transaction callback, or mutation
+callback is exposed.
+
+The trusted application designates and retains the instance. Publication is an
+explicit replacement of **all** authority inputs, not a claim that an arbitrary
+object, timestamp, historical observation, or deepcopy proves currentness.
+The publisher must supply complete collection quantities by exact Arena printing
+(missing entries mean zero), with exclusively held input objects during the
+publication call. Input provenance and completeness are trust requirements;
+this API cannot authenticate them. Collection counts and inventory counts must
+be exact nonnegative integers, not booleans. Wildcard-budget mode requires an
+Inventory; full-collection mode may omit it. Unlimited mode is rejected.
+
+Publication acquires the authority's `threading.Lock`, validates and detaches
+nested inputs, and opens a fresh read-only source-card connection/transaction.
+It copies the complete card/printing projection needed by the existing
+validator into a privately owned, query-only in-memory SQLite database. The
+projection includes all printings for title-based legality, not just the added
+card. No caller connection or preexisting caller transaction is accepted.
+Source-file refreshes do not change published state: participating updates must
+call `publish(...)`. The **latest successful publication**, rather than the
+source file, is the designated local authority. Failed publication leaves the
+old context and generation unchanged. No source file or managed deck is written
+by publication.
+
+Each authority has a generated UUID and positive integer generation, starting
+at 1 and advancing for every successful publication. A new instance/restart is
+a new authority identity. Card projection identity v1 uses SHA-256 over ordered
+card/printing rows. It identifies the retained local facts, not their provenance.
+Context identity/generation and that digest accompany execution evidence.
+
+The lock order is always **authority lock -> managed-store BEGIN IMMEDIATE**.
+Publication and close take the same authority lock. It remains held through
+deck commit and connection cleanup. Each execution receives detached resources
+and policy from the current publication under this guard. Multiple threads may
+share one authority. Independent processes/instances are independent authorities;
+this is not a cross-process resource registry or live-file synchronization
+framework. The trusted application must route all participating updates to its
+designated instance. Destination CAS still protects a deck from writers using
+other instances. No live Arena collection provider is introduced.
+
+### Application API and atomic mutation
+
+`services.local_deck_application.apply_local_deck_application(intent, *,
+store_path, validation_authority)` returns a Local Deck Application Result v1
+only after commit. The owning #6N verifier runs first, before storage IO or
+authority acquisition. The supplied authority must be the concrete v1 type.
+The physical store path comes from trusted invocation, never from the artifact.
+There are no replacement-Deck, action, title, need, metadata, cost, or validation
+result overrides. Intent digests and provenance references are not credentials.
+
+Inside the authority guard and one adapter-owned write transaction, the executor:
+
+1. Validates store kind/schema, store UUID/generation and the selected live record.
+2. Requires exact #6N revision, gameplay identity, name and nullable format label.
+3. Requires current mode, complete Format and explicit DeckRules to equal #6N's
+   captured validation context. Policy changes require a renewed intent.
+4. Reconstructs exactly the approved one-copy add, preserving all other zones,
+   printing quantities and metadata, including signed-64-bit storage bounds.
+5. Checks the reconstruction against #6N's expected result identity.
+6. Calls the existing #6L builder and owning verifier with the current guarded
+   inputs and authoritative baseline, invoking the existing validator afresh.
+7. Requires valid fresh validation and one of `full_collection /
+   owned_no_crafting_required` or `wildcard_budget / no_spend_required`, exact
+   false spending authorization, matching cost maps of exact nonnegative
+   integers, and total cost zero. Affordable positive cost still rejects.
+8. Uses a private connection-bound write/reread helper, increments revision once,
+   and verifies the complete persisted state and expected gameplay identity.
+9. Constructs/verifies the result in memory, commits, and only then returns it.
+
+The public `conditional_replace()` is not called or nested. Its existing contract
+(including unchanged no-ops) and the deletion contract remain intact. #6O never
+treats a no-op as successful application. Ownership is checked for the entire
+prospective deck, aggregated by printing across zones, preserving existing basic
+land exemptions. Empty costs in full-collection mode do not override validation
+errors. Fresh warnings are retained. No upstream versions or store schema change.
+
+### Result, failures and retries
+
+`require_local_deck_application_result(value)` verifies a closed, detached,
+JSON-only historical result without IO. Model and identity versions are `1`;
+status is `applied`, reason `exact_local_add_committed`. It binds the complete
+verified source intent and identity, previous authoritative destination, newly
+computed #6L evidence, authority ID/generation, card projection identity,
+canonical complete collection and inventory, exact action, resulting destination
+and gameplay identity, old/new revisions, fixed scope and ordered limitations.
+The retained #6L evidence includes current Format/DeckRules/mode, printing facts,
+validation and resource assessments; its own deferred destination semantics are
+unchanged. The source file path is not retained. Resource evidence can be
+sensitive and is not automatically logged or persisted as a receipt.
+
+Local Deck Application Result Identity v1 hashes all result fields except the
+identity itself using SHA-256 and canonical UTF-8 JSON (sorted keys, compact
+separators, preserved Unicode, no non-finite numbers). Historical verification
+checks shapes, owning identities, baseline/result/action/policy reconciliation,
+metadata and revision transition. It cannot revalidate a card database from a
+digest, prove commit, authenticate collection completeness or human consent,
+or detect coherent artifact rewriting. The digest is mismatch detection, not
+authentication, capability authority, non-repudiation, external rollback
+detection, or exactly-once proof.
+
+Store failures retain `ManagedDeckStoreError` codes, including store/generation,
+revision, baseline and metadata mismatches; missing/deleted records; revision
+exhaustion; busy storage; transaction/commit failure; and result mismatch.
+`LocalDeckApplicationError` uses the closed codes `invalid_intent`,
+`invalid_execution_context`, `execution_context_unavailable`,
+`execution_context_conflict`, `validation_unavailable`, `fresh_validation_failed`,
+`current_spend_required`, and `expected_result_mismatch`. Messages contain only
+the code. Rejected/unsupported #6N artifacts produce `invalid_intent`.
+
+Pre-commit failures roll back header and card-row changes without advancing
+revision. Cleanup errors do not replace an existing closed failure with raw SQL
+diagnostics. A commit or post-commit cleanup failure never returns success, but
+may leave the caller uncertain about persistence. Crash/response loss after
+commit can likewise leave an applied deck without a delivered result. Durability
+uses the existing supported rollback/WAL journal modes and `synchronous=FULL`,
+subject to SQLite, filesystem and hardware guarantees.
+
+Replay is fail-closed: once revision advances, the original intent is stale.
+Matching expected-result gameplay is not `already_applied` evidence. There is
+no automatic refresh, retry against a newer revision, or inferred success.
+Concurrent same-intent attempts in DELETE and WAL modes can commit at most once;
+the loser sees a revision mismatch after acquiring the write transaction, or a
+storage-busy failure if it cannot acquire the lock. If the first rolls back, the
+second may succeed. In-file UUIDs cannot detect arbitrary coherent copying,
+replacement, or rollback. Durable receipts and exactly-once retry remain deferred.
+
+No crafting, currency/wildcard spending, Arena mutation/export/import, generalized
+editing/removal, multi-card application, automatic destination selection,
+metadata changes, creation/deletion of another deck, upstream artifact mutation,
+or automatic recommendation acceptance is performed.
+
+```powershell
+python -m unittest tests.test_local_deck_application tests.test_local_execution_validation -v
 ```
 
 ## Deterministic deck diagnosis (intelligence pass #2)
