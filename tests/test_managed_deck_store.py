@@ -76,7 +76,7 @@ class ManagedDeckStoreTests(unittest.TestCase):
         self.error("malformed_store", lambda: store.open_store(path))
 
     def test_unsupported_version(self):
-        self.sql("UPDATE managed_store_meta SET schema_version='2'")
+        self.sql("UPDATE managed_store_meta SET schema_version='999'")
         before = self.path.read_bytes()
         self.error("unsupported_schema", lambda: store.open_store(self.path))
         self.error("unsupported_schema", lambda: self.create())

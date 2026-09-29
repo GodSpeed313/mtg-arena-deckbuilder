@@ -1504,6 +1504,194 @@ or automatic recommendation acceptance is performed.
 python -m unittest tests.test_local_deck_application tests.test_local_execution_validation -v
 ```
 
+## Durable Local Application Outcome v1 (pass #6P)
+
+#6P adds the explicit lifecycle **prepare -> execute prepared operation ->
+recover**. The deck change and its committed receipt persist in the same SQLite
+transaction or neither persists. There is no after-commit receipt write.
+The original `apply_local_deck_application(...)` (#6O) is unchanged and remains
+receipt-free on both supported store schemas. It is not internally redirected,
+deprecated, or assigned retrospective operations. Matching current gameplay
+never substitutes for a receipt, even if a #6P preparation already exists.
+
+### Explicit managed-store schema v2 migration
+
+`mtgadb.managed_deck_store.migrate_store_v1_to_v2(path)` is the only migration
+entry point. `initialize_store(path)` still creates v1; ordinary initialization,
+opening, preparation, execution and recovery never migrate implicitly. #6P
+requires schema v2. Both complete schemas are supported by the new adapter;
+unknown versions, extra objects and mismatched schema/version pairs are rejected.
+Binaries that only support schema v1 reject schema v2.
+
+Migration enters `BEGIN IMMEDIATE`, verifies the closed v1 schema and all existing
+records (including tombstones, metadata, revisions and card rows), and captures
+their exact state before mutation. It adds only the following table and advances
+the schema version to `"2"`:
+
+```sql
+CREATE TABLE managed_application_operations (
+    operation_id TEXT PRIMARY KEY NOT NULL,
+    store_generation TEXT NOT NULL,
+    intent_digest TEXT NOT NULL CHECK(length(intent_digest) = 64),
+    record_id TEXT NOT NULL REFERENCES managed_decks(record_id),
+    expected_revision INTEGER NOT NULL CHECK(typeof(expected_revision) = 'integer' AND expected_revision > 0),
+    intent_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('prepared', 'committed')),
+    receipt_json TEXT,
+    UNIQUE(store_generation, intent_digest),
+    CHECK((state = 'prepared' AND receipt_json IS NULL) OR
+          (state = 'committed' AND receipt_json IS NOT NULL))
+)
+```
+
+The three existing table definitions are unchanged. UUIDs, complete JSON shapes,
+identity/version fields and cross-field bindings are checked by the owning code
+in addition to these database constraints. SQLite supplies indexes for the
+primary key and unique constraint; no extra user index or trigger is introduced.
+
+Before commit, migration verifies the v2 schema, unchanged store ID/generation,
+all record UUIDs/revisions, gameplay rows, metadata and lifecycle, and an empty
+operation table. No operations or receipts are backfilled. Any pre-commit failure
+rolls back the DDL and version update together. Commit acknowledgment uncertainty
+still applies: if commit succeeded before an error, inspect the schema instead
+of assuming rollback. Calling this exact transition on an already-v2 store
+raises `unsupported_schema`; it is not a retry or migration shortcut.
+
+### New public lifecycle APIs
+
+In `services.local_deck_application_outcome`:
+
+```python
+prepare_local_deck_application(intent, *, store_path)
+execute_prepared_local_deck_application(operation, *, store_path, validation_authority)
+recover_local_deck_application(intent, *, store_path)
+require_local_deck_application_receipt(value)
+```
+
+The trusted invocation supplies the physical store path outside all artifacts.
+Preparation/recovery verify the complete #6N intent before IO. Execution verifies
+the complete operation handle, including the owning #6N artifact, before IO.
+No caller action, result, metadata, cost or replacement Deck overrides exist.
+
+Preparation validates the supplied store ID/generation and, for a new
+registration, the exact live #6N destination observation. It creates one operation
+UUID and canonical full intent JSON with state `prepared`, performing no resource
+validation and no deck mutation. It grants no additional approval. The unique
+generation/intent-digest constraint deduplicates registration, but existing
+registrations must also match the **complete canonical intent**, not just its
+digest. Preparation returns the same handle for a fully matching registration
+even if that operation has subsequently committed. No lifecycle state is asserted
+by the handle itself. Lost preparation responses are recoverable by retained
+complete intent. Callers must retain that intent or the operation handle before
+requesting execution.
+
+Operation Model v1 is a closed detached object with
+`local_deck_application_operation_model_version: "1"`, `operation_id`, `store_id`,
+`store_generation`, `record_id`, `expected_revision`, `source_intent` and
+`source_intent_identity`. The durable row and verified intent are its authority
+for binding; the UUID is not a credential. No caller-chosen registration UUID,
+operation deletion, reassignment or editing API is provided.
+
+Execution follows the existing lock order **authority guard -> managed-store
+BEGIN IMMEDIATE**. It requires the matching durable operation to be `prepared`
+and repeats every #6O destination freshness, policy equality, reconstruction,
+fresh #6L validation and exact zero-spend check. It uses the private connection-
+bound mutation helper, verifies the persisted destination, builds/verifies the
+unchanged #6O Result v1, and updates the operation to `committed` with the complete
+receipt. The update requires the previous state to be `prepared` with a null
+receipt and must affect exactly one row. It rereads and verifies the operation
+and receipt before the **same commit**. The authority remains guarded through
+commit/cleanup. No public #6O executor or public conditional replacement is called.
+
+The sole supported lifecycle transition is `prepared -> committed` and is coupled
+to one deck revision increment. A committed operation yields
+`operation_state_conflict` on execution; use recovery to observe historical success.
+There is no second execution success, `already_applied` inference or automatic
+retry. Failed execution leaves the operation prepared unless commit actually
+succeeded before its acknowledgment was lost. Receipts cannot be updated,
+deleted, replaced or pruned through an API.
+
+### Receipt and recovery evidence
+
+Receipt Model/Identity v1 has model version `"1"`, status `committed`, reason
+`deck_and_receipt_committed_atomically`, operation UUID, store UUID/generation,
+source intent identity, complete verified #6O `application_result`, fixed ordered
+limitations and `local_deck_application_receipt_identity`. The identity contains
+version `"1"`, algorithm `sha256`, the complete canonical payload excluding the
+identity itself, and its digest. Encoding is strict canonical UTF-8 JSON with
+sorted keys, compact separators, preserved Unicode and no non-finite numbers.
+
+Verification delegates to the unchanged #6O result verifier, then reconciles
+store/generation and source intent identity. The embedded result reconciles the
+destination, revisions, action and #6N intent. Durable reads additionally reconcile
+the complete operation binding, operation UUID, row projections, lifecycle,
+canonical stored JSON, complete result intent and receipt. A malformed matching
+row or receipt is an error, never an absent registration or success shortcut.
+The verifier returns detached historical evidence without IO or fresh validation.
+A coherent artifact rewrite can still verify; supplied artifacts alone do not
+prove durability. Source and resource data inside results may be sensitive and
+are now durably retained by this explicit prepared-operation path.
+
+Recovery takes a short `BEGIN IMMEDIATE` writer barrier and makes **no logical
+state changes**. It verifies the store and looks up the complete retained intent.
+It does not acquire a resource authority, invoke the validator/#6L builder, read
+current deck contents, change a deck, select another destination, refresh intent
+or initiate execution. Recovery Model v1 returns `status`, `reason`, store
+ID/generation, source intent identity, operation handle (or null), receipt (or
+null), and fixed limitations:
+
+| Status | Reason | Meaning at the observation boundary |
+| --- | --- | --- |
+| `not_found` | `no_registration_observed` | No matching registration was observed. |
+| `prepared` | `no_committed_receipt_observed` | Registration exists without a committed receipt. |
+| `committed` | `matching_durable_receipt_observed` | A matching verified receipt was read from this store generation. |
+
+`prepared` and `not_found` are not terminal cancellation, proof of no future
+execution, or permission to retry automatically. Recovery waits behind an active
+writer or fails with `storage_busy`; a later explicitly initiated execution can
+begin after recovery releases its barrier. A committed receipt remains historical
+evidence after later gameplay edits, metadata changes or tombstone deletion. It
+does not claim the deck still has the resulting contents. In particular,
+receipt-free #6O execution remains unrecoverable via #6P even if current gameplay
+equals the approved result.
+
+`LocalDeckApplicationOutcomeError` uses only `invalid_operation`,
+`operation_not_found`, `operation_binding_conflict`, `operation_state_conflict`,
+`malformed_operation`, and `receipt_mismatch`. Existing #6O and managed-store
+errors retain their codes. Wrong/missing stores, unsupported schemas, generation
+conflicts, corruption and lock errors never become `not_found`. Messages contain
+only stable codes, not deck contents or SQL diagnostics.
+
+### Failure, concurrency and trust limits
+
+Registration is its own durable transaction. Application and receipt persistence
+are a second, indivisible transaction. Failure before application commit rolls
+back both the deck change and receipt, leaving preparation intact. A crash or
+lost response after commit can be resolved by reading the receipt. Receipt-write,
+verification and reread failures all reject and roll back before commit. Commit
+or cleanup failure may leave persistence uncertain until recovery is possible.
+
+Same-operation concurrent execution commits at most once; the loser sees an
+operation-state conflict or contention. Different operations bound to the same
+old destination revision are still protected by destination CAS. Concurrent
+registration resolves to one handle. DELETE/WAL tests cover these cases,
+execution versus recovery, and actual subprocess termination immediately before
+and after commit. Durability relies on the existing supported SQLite journal
+modes, `synchronous=FULL`, filesystem and hardware guarantees; this is not a claim
+of exactly-once delivery.
+
+Durable evidence is conditional on managed-store continuity. Coherent external
+rollback, copying or tampering is not detected in general. Hashes authenticate
+neither humans nor authority and provide no non-repudiation. All #6O local-state,
+live-Arena and nonparticipating-writer limitations remain unchanged. No automatic
+retry, crafting, spending, Arena import/export/write, generalized editing,
+removal, multi-card operation, automatic acceptance/destination selection,
+metadata-changing application or retrospective #6O recovery is introduced.
+
+```powershell
+python -m unittest tests.test_local_deck_application_outcome tests.test_managed_store_migration -v
+```
+
 ## Deterministic deck diagnosis (intelligence pass #2)
 
 ```powershell

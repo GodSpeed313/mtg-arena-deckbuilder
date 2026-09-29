@@ -19,6 +19,7 @@ from mtgadb.model import Deck
 
 STORE_KIND = "local_managed_decks"
 SCHEMA_VERSION = "1"
+OUTCOME_SCHEMA_VERSION = "2"
 DESTINATION_STATE_VERSION = "1"
 MAX_INTEGER = 2**63 - 1
 _ZONES = ("main", "sideboard", "commander")
@@ -53,6 +54,19 @@ _SCHEMA = (
         PRIMARY KEY(record_id, zone, arena_id)
     )""",
 )
+_OPERATION_SCHEMA = """CREATE TABLE managed_application_operations (
+    operation_id TEXT PRIMARY KEY NOT NULL,
+    store_generation TEXT NOT NULL,
+    intent_digest TEXT NOT NULL CHECK(length(intent_digest) = 64),
+    record_id TEXT NOT NULL REFERENCES managed_decks(record_id),
+    expected_revision INTEGER NOT NULL CHECK(typeof(expected_revision) = 'integer' AND expected_revision > 0),
+    intent_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('prepared', 'committed')),
+    receipt_json TEXT,
+    UNIQUE(store_generation, intent_digest),
+    CHECK((state = 'prepared' AND receipt_json IS NULL) OR
+          (state = 'committed' AND receipt_json IS NOT NULL))
+)"""
 _STATE_FIELDS = {
     "destination_state_version", "store_id", "store_generation", "record_id",
     "revision", "deck", "metadata", "gameplay_snapshot_identity",
@@ -182,8 +196,11 @@ def _schema(con):
         "SELECT type, name, sql FROM sqlite_master WHERE substr(name,1,7) != 'sqlite_'"
     ).fetchall()
     expected = {statement.split()[2]: statement for statement in _SCHEMA}
-    if {row["name"] for row in objects} != set(expected):
+    names = {row["name"] for row in objects}
+    if names not in (set(expected), {*expected, "managed_application_operations"}):
         _fail("malformed_store")
+    if "managed_application_operations" in names:
+        expected["managed_application_operations"] = _OPERATION_SCHEMA
     # A closed schema rejects missing constraints, extra columns, views and
     # triggers, not just familiar table names. Whitespace is non-semantic.
     for row in objects:
@@ -197,8 +214,10 @@ def _schema(con):
         _fail("malformed_store")
     if type(meta["schema_version"]) is not str:
         _fail("malformed_store")
-    if meta["schema_version"] != SCHEMA_VERSION:
+    if meta["schema_version"] not in (SCHEMA_VERSION, OUTCOME_SCHEMA_VERSION):
         _fail("unsupported_schema")
+    if (meta["schema_version"] == OUTCOME_SCHEMA_VERSION) != ("managed_application_operations" in names):
+        _fail("malformed_store")
     _uuid(meta["store_id"], "malformed_store")
     _uuid(meta["store_generation"], "malformed_store")
     if con.execute("PRAGMA foreign_key_check").fetchone() is not None:
@@ -278,6 +297,38 @@ def open_store(path) -> dict:
     """Validate an existing store and return detached metadata, not a connection."""
     with _connection(path) as con:
         return _schema(con)
+
+
+def _migration_state(con, meta):
+    """Validate every record, including tombstones, then capture exact old rows."""
+    for row in con.execute("SELECT record_id FROM managed_decks ORDER BY record_id").fetchall():
+        _read(con, meta, row[0], include_deleted=True)
+    return {
+        "headers": [tuple(row) for row in con.execute("SELECT * FROM managed_decks ORDER BY record_id")],
+        "cards": [tuple(row) for row in con.execute(
+            "SELECT * FROM managed_deck_cards ORDER BY record_id,zone,arena_id")],
+    }
+
+
+def migrate_store_v1_to_v2(path) -> dict:
+    """Explicit atomic schema extension; no history backfill or generation change.
+
+    Requires v1. Repeating this transition on v2 is unsupported_schema, not an
+    implicit no-op. Ordinary initialization still creates v1; opens never migrate.
+    """
+    with _connection(path, write=True, mutation=True) as con:
+        previous = _schema(con)
+        if previous["schema_version"] != SCHEMA_VERSION:
+            _fail("unsupported_schema")
+        before = _migration_state(con, previous)
+        con.execute(_OPERATION_SCHEMA)
+        con.execute("UPDATE managed_store_meta SET schema_version=? WHERE singleton=1", (OUTCOME_SCHEMA_VERSION,))
+        result = _schema(con)
+        if result != {**previous, "schema_version": OUTCOME_SCHEMA_VERSION} or (
+            _migration_state(con, result) != before
+        ) or con.execute("SELECT 1 FROM managed_application_operations").fetchone() is not None:
+            _fail("result_mismatch")
+    return result
 
 
 def _read(con, meta, record_id, *, include_deleted=False):

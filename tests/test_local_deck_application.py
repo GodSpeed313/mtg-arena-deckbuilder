@@ -219,7 +219,7 @@ class LocalDeckApplicationTests(unittest.TestCase):
         self.error("store_identity_mismatch", lambda: self.apply(store_path=other))
         self.sql("UPDATE managed_store_meta SET store_generation=?", (str(uuid4()),))
         self.error("store_generation_mismatch")
-        self.sql("UPDATE managed_store_meta SET schema_version='2'")
+        self.sql("UPDATE managed_store_meta SET schema_version='999'")
         self.error("unsupported_schema")
 
     def test_same_contents_other_record_untouched(self):
