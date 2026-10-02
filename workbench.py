@@ -16,6 +16,8 @@ from services.exporter import export_arena_deck, import_arena_deck
 from services.validator import DeckRules, validate_deck
 from services.intelligence import analyze_deck
 from services.diagnosis import diagnose_analysis
+from services.deck_review import review_deck, exit_code as review_exit_code
+from services.deck_review_report import render_json as render_review_json, render_text as render_review_text
 
 
 ROOT = Path(__file__).parent
@@ -178,6 +180,37 @@ def diagnose_deck_command(args: argparse.Namespace) -> int:
         con.close()
 
 
+def review_deck_command(args: argparse.Namespace) -> int:
+    from time import perf_counter_ns
+    start = perf_counter_ns() if args.timings else None
+    report = review_deck(args.deck, database_path=args.database, format_name=args.format,
+                        colors=args.colors, preference_policy_path=args.preference_policy,
+                        proposal_policy_path=args.proposal_policy,
+                        candidate_limit=args.candidate_limit, observe_timings=args.timings)
+    render_start = perf_counter_ns() if args.timings else None
+    rendered = render_review_json(report) if args.json else render_review_text(report)
+    render_elapsed = perf_counter_ns() - render_start if args.timings else None
+    print(rendered)
+    if args.timings:
+        # Rendering cannot time itself inside its own serialized output.
+        print(json.dumps({"deck_review_render_observations_version": "1",
+                          "render_elapsed_ns": render_elapsed,
+                          "cli_elapsed_ns": perf_counter_ns() - start}), file=sys.stderr)
+    return review_exit_code(report)
+
+
+def _candidate_limit(value):
+    if value == "all":
+        return None
+    try:
+        number = int(value)
+        if number <= 0 or str(number) != value:
+            raise ValueError()
+        return number
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("use a positive integer or all") from exc
+
+
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -233,6 +266,18 @@ def parser() -> argparse.ArgumentParser:
     diagnosis.add_argument("deck", type=Path)
     diagnosis.set_defaults(func=diagnose_deck_command)
 
+    review = sub.add_parser("review-deck", help="read-only integrated review; no approval or execution")
+    review.add_argument("deck", type=Path)
+    review.add_argument("--format", help="explicit format loaded in the canonical database")
+    review.add_argument("--colors", help="explicit distinct uppercase WUBRG restriction")
+    review.add_argument("--preference-policy", type=Path, help="explicit #6C declaration JSON")
+    review.add_argument("--proposal-policy", type=Path, help="one explicit #6G declaration JSON")
+    review.add_argument("--candidate-limit", type=_candidate_limit, default=50,
+                        help="per-need returned pool limit (default: 50); all explicitly disables it")
+    review.add_argument("--json", action="store_true", help="complete Deck Review Report v1")
+    review.add_argument("--timings", action="store_true", help="opt-in observations, never performance-dependent decisions")
+    review.set_defaults(func=review_deck_command)
+
     normalize = sub.add_parser(
         "normalize", help="resolve and render a canonical Arena decklist"
     )
@@ -244,7 +289,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if args.command not in {"save-arena", "list-arena-snapshots", "show-arena-snapshot"} and not args.database.exists():
+    if args.command not in {"save-arena", "list-arena-snapshots", "show-arena-snapshot", "review-deck"} and not args.database.exists():
         print(f"database not found: {args.database}", file=sys.stderr)
         return 2
     try:

@@ -7,7 +7,7 @@ ownership, quantity, or crafting facts.
 
 ## Current milestone: Offline Deck Workbench
 
-Implemented:
+Available foundation and CLI capabilities:
 
 - Canonical SQLite projection of Arena's local card database
 - Two-level card identity: canonical card (`title_id`) and printing (`arena_id`)
@@ -21,13 +21,31 @@ Implemented:
 - `unlimited`, `full_collection`, and `wildcard_budget` modes
 - Structured import and validation diagnostics
 - Read-only `StartHook` inventory and saved-deck snapshot inspection
+- Immutable Arena snapshot archive (`save-arena`, list/show); observations do
+  not become current ownership or execution authority
+- Deterministic `analyze-deck` and `diagnose-deck`
+- Read-only `review-deck`: import, analysis, packages/dependencies/needs,
+  candidates/facts/comparison/fit, explicit-policy ordering/recommendation,
+  optional one-copy proposal and verified detached presentation (#6Q)
 
-Still planned:
+Implemented service-only capabilities (not invoked by `review-deck`):
 
-- Persistence and consumer conversion for Arena account snapshots
-- Manual collection-import workflow
-- Strategy and synergy recommendation layer
+- Explicit human proposal decision and pre-execution revalidation
+- Managed local decks with destination identities and conditional mutations
+- Local application intent (#6N), receipt-free atomic execution (#6O), and
+  durable prepare/execute/recover (#6P)
+
+Not implemented as a user workflow:
+
+- Strict manual collection onboarding and resource-authority publication
+- Approval, managed-deck application, and recovery UX
+- General strategic optimization or comprehensive Magic rules understanding
+- Live Arena collection synchronization or Arena-facing execution
 - Graphical user interface
+
+The existing `validate --collection` input is a simple validation adapter,
+not the strict onboarding boundary for an execution authority. The Arena log
+provider does not establish collection ownership.
 
 ## Requirements
 
@@ -92,6 +110,185 @@ Use it with exact-collection validation:
 python workbench.py validate my_deck.txt `
   --mode full_collection --collection collection.json
 ```
+
+## Read-only integrated deck review (#6Q)
+
+```powershell
+python workbench.py review-deck my_deck.txt
+python workbench.py review-deck my_deck.txt --format Standard --json
+python workbench.py review-deck my_deck.txt --format Standard --colors WU `
+  --preference-policy preference.json --proposal-policy proposal.json
+python workbench.py review-deck my_deck.txt --format Standard `
+  --preference-policy preference.json --candidate-limit all --timings --json
+```
+
+The **default candidate limit is 50 per need**, always reported. `all` explicitly
+disables this limit. A recommendation under a truncated pool applies only to
+the returned candidates; Proposal Policy v2 still requires a complete pool.
+No automatic wider search or retry occurs. Completeness means untruncated
+matches under the reviewed classifier, not exhaustive strategic understanding.
+
+First inspect the analysis and structured need keys. Supply your explicit
+preference declaration to request ordering and recommendations. If desired,
+supply one separate proposal declaration naming the exact need and target zone.
+Each invocation recomputes from its inputs; there is no saved review session.
+Without preference input, the review ends after comparison/fit evidence, with
+dependent stages explicitly skipped. An explicitly empty policy instead reaches
+the existing `no_declared_preference` outcome. No policy or provenance is inferred.
+
+### Explicit policy files
+
+Files contain the existing builder **declarations**, not previously normalized
+artifacts. Duplicate keys (including nested ones), non-finite numbers, malformed
+JSON, invalid Unicode, wrong shapes, unknown fields and unsupported policy
+values are rejected. UTF-8 with or without a BOM is accepted.
+
+Example explicit preference declaration (choose the directions and scope
+yourself; this example is not a default strategy):
+
+```json
+{
+  "policy_id": "my.preference.v1",
+  "policy_source": {"kind": "explicit_user", "provenance": {"reference": "my-review-declaration"}},
+  "scope": {"zones": ["main"], "need_keys": []},
+  "eligibility_handling": {"deterministic_ineligibility": "reject_malformed_input", "unresolved_eligibility": "preserve_unresolved"},
+  "rules": [{
+    "policy_rule_id": "prefer_lower_mana",
+    "criterion_id": "criterion.mana.value.v1",
+    "criterion_source": {"model": "candidate_comparison", "version": "2", "field_path": "title_index.canonical_facts.mana_value"},
+    "prerequisite": {},
+    "behavior": {"kind": "lexicographic_order", "direction": "prefer_lower"},
+    "unknown_behavior": "indeterminate",
+    "explanation": "Prefer lower canonical mana value.",
+    "source_provenance": {"reference": "my-review-declaration"}
+  }],
+  "serialization": {"method": "casefolded_name_then_title_id", "non_strategic": true}
+}
+```
+
+Optional proposal declaration for an observed lifegain need:
+
+```json
+{
+  "policy_id": "my.proposal.v1",
+  "policy_source": {"kind": "explicit_user", "provenance": {"reference": "my-review-declaration"}},
+  "need_key": {"zone": "main", "finding_id": "need.lifegain.enabler.v1", "dependency_id": "dependency.lifegain.v1"},
+  "recommendation_requirement": "recommendable",
+  "candidate_pool_requirement": "complete_only",
+  "eligibility_requirement": "resolved",
+  "printing_requirement": "single_eligible_printing",
+  "operation": "add_only", "quantity": 1,
+  "target_zone": "main", "resource_mode": "unlimited"
+}
+```
+
+Provenance references are declarations, not authentication. The existing #6J
+public verifier requires **identical policy sources** in preference-derived
+recommendation provenance and proposal policy. Its builder can construct a
+presentation that this verifier rejects if they differ. #6Q preserves both
+sources and reports `presentation_verification_failed`; it never rewrites
+either source. Only a successfully verified detached presentation is exposed.
+
+### Outcomes and interpretation
+
+| Observed condition | Review behavior |
+| --- | --- |
+| No supported need | Useful completed review; zero pools, no invented recommendation. Opportunities remain visible. |
+| Unsupported rules text | Coverage and unsupported text remain explicit; absence of evidence is not absence of a mechanic. |
+| A need with zero candidates | Empty pool plus matching/filter/exclusion counts; `no_candidates` when decision stage runs. |
+| Missing format | Unknown eligibility; no claim of legality and no proposal construction. An unavailable **named** format is an input error. |
+| Tie, single candidate, indeterminate or inconsistent ordering | Exact owner outcome; no name/ID tiebreak or automatic promotion. |
+| Truncated pool | Counts and limit displayed; existing complete-pool proposal restriction remains. |
+| Multiple eligible printings | `printing_cardinality_mismatch`; no printing is selected. |
+| Absent need or mismatched context | Existing `policy_context_mismatch`; no other need is selected. |
+| Invalid proposal declaration | Input error; independent analysis/recommendation can remain available. |
+| Exact-size/add-one incompatibility | `validation_failed` plus validator size diagnostic; no removal or replacement is attempted. |
+| Presentation verification failure | Stage error; accepted proposal evidence may remain, but verified presentation is withheld. |
+
+The supplied `examples/sample_deck.txt` currently produces no discovery-triggering
+support need. This does not mean the deck cannot improve. Analysis and diagnosis
+do not establish legality. Proposal validation uses the existing local validator
+and captured format/rules only. Stored format fields such as rarity quotas,
+rebalanced-card flags, and internal restrictions are not comprehensive enforcement
+of every Arena format rule. No live legality or ownership is established.
+
+### Deck Review Report v1
+
+The closed top-level fields are `deck_review_report_version` (`"1"`), `scope`
+(`read_only_integrated_deck_review`), `run_status`, `input_context`, `baseline`,
+`stages`, `artifacts`, `findings`, `limitations`, and `observations`.
+`run_status` is `completed`, `input_error`, or `stage_error`. Each stage contains
+`name`, `state` (`completed`, `error`, `skipped`), nullable `artifact_ref`, and
+nullable `diagnostic` (`code`, `message`). A completed stage can contain an owner
+abstention/rejection; it does not imply acceptance. Findings have `code`,
+`message`, and a source locator. These explain owner evidence without changing it.
+
+Artifacts retain owner outputs by detached value, including their version fields,
+limitations, and identities. As in existing analysis CLI JSON, Python tuples in
+owner analysis become JSON arrays. The typed Proposal Model v2 result is instead
+named `proposal_result_projection`: `Deck`, `Format`, and `DeckRules` are tagged
+with `report_type` and `fields`; integer/nullable-key maps use tagged `entries`,
+tuples and frozensets use tagged `items` (sets sorted). Ordinary JSON values remain
+ordinary JSON. This is a report projection, **not** a new accepted owner wire
+format. The original typed result is used to build/verify #6J, and the verified
+`presentation` artifact is included unchanged. The captured format/rules use the
+same typed projection in `input_context.validation_context_projection`.
+
+The report has no digest, identity, approval, execution meaning, or post-run
+freshness claim. It is not an input to #6N/#6O/#6P. There are no new model/policy
+or store versions. Missing optional stages are not errors. CLI exit codes are:
+`0` completed review (including legitimate abstentions/rejections), `2` invalid
+input/declaration or unavailable requested format, `1` database/owner-contract/
+composition/verification failure. Database messages do not include stored data.
+
+The command reads each input file once and owns one `mode=ro`, `query_only`
+connection with a read transaction spanning every database-dependent stage.
+It never initializes, migrates, refreshes, or writes a database or deck. It uses
+ordinary SQLite snapshot/locking behavior, not an `immutable` assumption. A long
+rollback-journal read can delay another writer. No report output file is created;
+stdout contains the human summary or full JSON. Human output omits some detail
+and caps displayed pair traces at eight per need; JSON retains all evidence.
+
+### Acceptance fixtures and performance observations
+
+`tests/fixtures/deck_review_v1.json` pins explicitly synthetic card/printing data,
+three supported theme families, unsupported/no-need deck variants, and explicit
+declarations. Supported-theme main decks have 24 lands and 36 nonlands; the
+no-need variant replaces the four theme cards with Plains. Tests build isolated
+databases and feed ordinary text through real services; normal paths do not
+inject intermediate artifacts. These are representative contract scenarios,
+not a competitive-deck benchmark or real-world recommendation success rate.
+
+Coverage includes three theme presentations, no need, no candidates, ties,
+single candidate, absent/empty/out-of-scope policy, unsupported text, unresolved
+eligibility, truncated/all discovery, multiple printings, exact-size failure,
+absent need, invalid policy, provenance mismatch, import errors, typed projections,
+determinism, forbidden APIs, no input writes, and competing writers in WAL and
+rollback-journal modes. Rare closed outcomes also have explicitly adapter-only
+presentation checks, rather than fabricated normal-path evidence.
+
+`--timings` adds `perf_counter_ns` observations, stage durations, total review
+duration, deck/need/candidate/pair counts. Stage measurements include artifact
+capture/serialization checks. CLI rendering and total CLI time are a separate
+versioned JSON observation on stderr, since rendered output cannot contain its
+own completed rendering duration. Default output has no timings or timestamps.
+Measurements never alter limits, policies, outcomes, or identities. Compare
+explicit repeated runs on different fixture sizes and the local canonical DB;
+record Python/platform and limits when interpreting timings. No thresholds,
+caching, performance-dependent decisions, search redesign, or automatic reruns
+are introduced.
+
+```powershell
+python -m unittest tests.test_deck_review -v
+python -m unittest discover
+python test_mtgadb.py
+```
+
+Approval/decline, #6N intent, #6O execution, #6P prepare/execute/recover, managed
+mutation, resource publication/onboarding, crafting/spending, automatic acceptance
+or retry, generalized/multi-card editing, Arena sync, strategic optimization,
+gate relaxation and new durability machinery are excluded. Standalone text
+import/export remains separate; this command ends at review presentation.
 
 ## Refresh Arena card data
 

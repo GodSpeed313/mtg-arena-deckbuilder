@@ -1,0 +1,60 @@
+{
+  "description": "Synthetic, pinned review controls; not real Arena cards or strategic quality claims. Each main deck has 24 Plains, 32 vanilla creatures, and four theme cards.",
+  "cards": [
+    {"title_id": 1, "name": "Life Payoff", "types": "Enchantment", "cmc": 3, "rules_text": "Whenever you gain life, draw a card."},
+    {"title_id": 2, "name": "Alpha Life", "types": "Sorcery", "cmc": 1, "rules_text": "You gain 3 life."},
+    {"title_id": 3, "name": "Beta Life", "types": "Sorcery", "cmc": 2, "rules_text": "You gain 2 life."},
+    {"title_id": 4, "name": "Plains", "types": "Land", "cmc": 0},
+    {"title_id": 5, "name": "Token Payoff", "types": "Enchantment", "cmc": 3, "rules_text": "Whenever a creature token enters the battlefield under your control, draw a card."},
+    {"title_id": 6, "name": "Alpha Token", "types": "Sorcery", "cmc": 1, "rules_text": "Create a 1/1 white Soldier creature token."},
+    {"title_id": 7, "name": "Beta Token", "types": "Sorcery", "cmc": 2, "rules_text": "Create two 1/1 white Soldier creature tokens."},
+    {"title_id": 8, "name": "Counter Payoff", "types": "Enchantment", "cmc": 3, "rules_text": "Whenever one or more +1/+1 counters are put on a creature you control, draw a card."},
+    {"title_id": 9, "name": "Alpha Counter", "types": "Sorcery", "cmc": 1, "rules_text": "Put a +1/+1 counter on target creature you control."},
+    {"title_id": 10, "name": "Beta Counter", "types": "Sorcery", "cmc": 2, "rules_text": "Put two +1/+1 counters on target creature you control."},
+    {"title_id": 11, "name": "Unreviewed Engine", "types": "Enchantment", "cmc": 3, "rules_text": "Whenever life is gained, celebrate."},
+    {"title_id": 12, "name": "Third Life", "types": "Sorcery", "cmc": 3, "rules_text": "You gain 4 life."},
+    {"title_id": 21, "name": "Steady Guard", "types": "Creature", "cmc": 1},
+    {"title_id": 22, "name": "Hill Guard", "types": "Creature", "cmc": 2},
+    {"title_id": 23, "name": "Valley Guard", "types": "Creature", "cmc": 2},
+    {"title_id": 24, "name": "Sky Guard", "types": "Creature", "cmc": 3},
+    {"title_id": 25, "name": "Field Guard", "types": "Creature", "cmc": 3},
+    {"title_id": 26, "name": "Dawn Guard", "types": "Creature", "cmc": 4},
+    {"title_id": 27, "name": "Dusk Guard", "types": "Creature", "cmc": 4},
+    {"title_id": 28, "name": "River Guard", "types": "Creature", "cmc": 5}
+  ],
+  "main_base": "Deck\n24 Plains (FIX) 4\n4 Steady Guard (FIX) 21\n4 Hill Guard (FIX) 22\n4 Valley Guard (FIX) 23\n4 Sky Guard (FIX) 24\n4 Field Guard (FIX) 25\n4 Dawn Guard (FIX) 26\n4 Dusk Guard (FIX) 27\n4 River Guard (FIX) 28\n",
+  "themes": {
+    "life": "4 Life Payoff (FIX) 1\n",
+    "token": "4 Token Payoff (FIX) 5\n",
+    "counter": "4 Counter Payoff (FIX) 8\n",
+    "unsupported": "4 Unreviewed Engine (FIX) 11\n",
+    "no_need": "4 Plains (FIX) 4\n"
+  },
+  "preference": {
+    "policy_id": "review.fixture.preference.v1",
+    "policy_source": {"kind": "explicit_user", "provenance": {"reference": "review-fixture-declaration"}},
+    "scope": {"zones": [], "need_keys": []},
+    "eligibility_handling": {"deterministic_ineligibility": "reject_malformed_input", "unresolved_eligibility": "preserve_unresolved"},
+    "rules": [{
+      "policy_rule_id": "prefer_lower_mana",
+      "criterion_id": "criterion.mana.value.v1",
+      "criterion_source": {"model": "candidate_comparison", "version": "2", "field_path": "title_index.canonical_facts.mana_value"},
+      "prerequisite": {},
+      "behavior": {"kind": "lexicographic_order", "direction": "prefer_lower"},
+      "unknown_behavior": "indeterminate",
+      "explanation": "Prefer lower canonical mana value.",
+      "source_provenance": {"reference": "review-fixture-declaration"}
+    }],
+    "serialization": {"method": "casefolded_name_then_title_id", "non_strategic": true}
+  },
+  "proposal": {
+    "policy_id": "review.fixture.proposal.v1",
+    "policy_source": {"kind": "explicit_user", "provenance": {"reference": "review-fixture-declaration"}},
+    "need_key": {"zone": "main", "finding_id": "need.lifegain.enabler.v1", "dependency_id": "dependency.lifegain.v1"},
+    "recommendation_requirement": "recommendable",
+    "candidate_pool_requirement": "complete_only",
+    "eligibility_requirement": "resolved",
+    "printing_requirement": "single_eligible_printing",
+    "operation": "add_only", "quantity": 1, "target_zone": "main", "resource_mode": "unlimited"
+  }
+}
