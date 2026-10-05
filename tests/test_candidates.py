@@ -78,7 +78,7 @@ class CandidatePoolTests(unittest.TestCase):
     def pool(self, result: dict, label: str) -> dict:
         return next(
             pool for pool in result["pools"]
-            if pool["source_need"]["dependency_label"] == label
+            if pool["source_need"]["dependency_id"].split(".")[1] == label
         )
 
     def test_version_stability_trigger_and_neutral_ordering(self):
@@ -89,9 +89,9 @@ class CandidatePoolTests(unittest.TestCase):
         second = discover_candidates(
             self.analysis_for(deck), deck, self.con, format_name="Test",
         )
-        self.assertEqual(CANDIDATE_MODEL_VERSION, "3")
+        self.assertEqual(CANDIDATE_MODEL_VERSION, "4")
         self.assertEqual(first, second)
-        self.assertEqual(first["candidate_model_version"], "3")
+        self.assertEqual(first["candidate_model_version"], "4")
         self.assertEqual(first["analyzed_deck_identity"], build_deck_snapshot_identity(deck))
         self.assertEqual(first["trigger_finding_type"], "support_need")
         self.assertEqual(first["ordering"], "casefolded_card_name_then_title_id_non_ranking")
@@ -128,7 +128,7 @@ class CandidatePoolTests(unittest.TestCase):
         self.assertEqual(alpha["source_need"]["finding_id"], "need.lifegain.enabler.v1")
         self.assertEqual(alpha["source_need"]["dependency_id"], "dependency.lifegain.v1")
         self.assertEqual(
-            alpha["source_need"]["missing_side"]["feature_rule_ids"],
+            alpha["source_need"]["missing_side"]["acceptable_feature_rule_ids"],
             ["effect.lifegain.v1"],
         )
         self.assertEqual(alpha["title_id"], 2)
@@ -197,7 +197,7 @@ class CandidatePoolTests(unittest.TestCase):
         )
         self.pool(result, "creature_token_entry")
         self.assertFalse(any(
-            pool["source_need"]["dependency_label"] == "creature_token_sacrifice"
+            pool["source_need"]["dependency_id"].split(".")[1] == "creature_token_sacrifice"
             for pool in result["pools"]
         ))
         self.assertGreaterEqual(result["ignored_non_trigger_findings"], 1)
@@ -272,8 +272,8 @@ class CandidatePoolTests(unittest.TestCase):
         self.assertEqual(deck, deck_before)
         self.assertEqual(tuple(self.con.iterdump()), database_before)
         self.assertEqual(diagnose_analysis(analysis), diagnosis_before)
-        self.assertEqual(analysis["needs_model_version"], "2")
-        self.assertEqual(analysis["dependency_model_version"], "2")
+        self.assertEqual(analysis["needs_model_version"], "3")
+        self.assertEqual(analysis["dependency_model_version"], "3")
         self.assertEqual(analysis["functional_package_model_version"], "1")
         self.assertEqual(
             {row["rule_id"] for row in analysis["interactions"]},

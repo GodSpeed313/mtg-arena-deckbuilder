@@ -11,6 +11,7 @@ from services.candidate_facts import derive_candidate_facts
 from services.dependencies import dependency_findings
 from services.intelligence import analyze_deck, classify_card, interactions
 from services.needs import needs_findings
+from services.evidence_scope import context_view
 
 
 CREATURE_TOKEN_PAYOFF = (
@@ -110,8 +111,8 @@ class CompatibilityModelTests(unittest.TestCase):
         listener = classified(4, "Listener", CREATURE_TOKEN_PAYOFF)
 
         def token_context(row):
-            return next(feature for feature in row["features"]
-                        if feature["rule_id"] == "effect.token.v1")["dependency_context"]
+            return context_view(next(feature for feature in row["features"]
+                        if feature["rule_id"] == "effect.token.v1")["dependency_context"])
 
         self.assertEqual(token_context(unconditional)["availability"], "unconditional")
         trigger_context = token_context(triggered)
@@ -148,7 +149,8 @@ class CompatibilityModelTests(unittest.TestCase):
         )
         context = next(feature for feature in partial["features"]
                        if feature["rule_id"] == "effect.noncreature_token.v1")["dependency_context"]
-        self.assertEqual(context["availability"], "partially_reviewed")
+        context = context_view(context)
+        self.assertEqual(context["availability"], "unestablished")
         self.assertTrue(context["unsupported_remainder"])
 
     def test_malformed_or_contradictory_context_fails_closed(self):
@@ -235,11 +237,11 @@ class CompatibilityIntegrationTests(unittest.TestCase):
         })
         result = discover_candidates(analysis, deck, self.con)
         pool = next(item for item in result["pools"]
-                    if item["source_need"]["dependency_label"] == "creature_token_entry")
-        self.assertEqual(pool["source_need"]["feature_matching_semantics"], "any")
+                    if item["source_need"]["dependency_id"].split(".")[1] == "creature_token_entry")
+        self.assertEqual(pool["source_need"]["missing_side"]["matching_semantics"], "any")
         self.assertTrue({2, 3, 4} <= {item["title_id"] for item in pool["candidates"]})
         triggered = next(item for item in pool["candidates"] if item["title_id"] == 4)
-        context = triggered["matching_feature_evidence"][0]["dependency_context"]
+        context = context_view(triggered["matching_feature_evidence"][0]["dependency_context"])
         self.assertEqual(context["availability"], "conditional")
         self.assertEqual(context["prerequisites"]["trigger"]["event"], "spell_cast")
         self.assertEqual(
@@ -247,10 +249,10 @@ class CompatibilityIntegrationTests(unittest.TestCase):
             "any",
         )
 
-        facts = derive_candidate_facts(result, self.con)
+        facts = derive_candidate_facts(result, self.con, source_analysis=analysis)
         fact_pool = next(item for item in facts["per_need"]
-                         if item["source_need"]["dependency_label"] == "creature_token_entry")
-        self.assertEqual(fact_pool["source_need"]["feature_matching_semantics"], "any")
+                         if item["source_need"]["dependency_id"].split(".")[1] == "creature_token_entry")
+        self.assertEqual(fact_pool["source_need"]["missing_side"]["matching_semantics"], "any")
         treasure = next(item for item in fact_pool["candidates"] if item["title_id"] == 2)
         self.assertEqual(
             treasure["eligibility"]["required_feature"]["matching_semantics"],
@@ -258,9 +260,9 @@ class CompatibilityIntegrationTests(unittest.TestCase):
         )
 
         contradictory = deepcopy(result)
-        contradictory["pools"][0]["source_need"]["feature_matching_semantics"] = "all"
+        contradictory["pools"][0]["source_need"]["missing_side"]["matching_semantics"] = "all"
         with self.assertRaises(ValueError):
-            derive_candidate_facts(contradictory, self.con)
+            derive_candidate_facts(contradictory, self.con, source_analysis=analysis)
 
     def test_contradictory_alternative_contract_fails_closed(self):
         deck = Deck(main={101: 1})
@@ -279,6 +281,6 @@ class CompatibilityIntegrationTests(unittest.TestCase):
         self.assertEqual(sacrifice["finding_type"], "optional_support_observation")
         result = discover_candidates(analysis, deck, self.con)
         self.assertFalse(any(
-            pool["source_need"]["dependency_label"] == "creature_token_sacrifice"
+            pool["source_need"]["dependency_id"].split(".")[1] == "creature_token_sacrifice"
             for pool in result["pools"]
         ))

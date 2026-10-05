@@ -17,7 +17,8 @@ from mtgadb.deck_identity import (
 )
 from mtgadb.model import Deck, Format
 from mtgadb.modes import OperatingMode
-from services.proposal_policy import build_proposal_policy
+from services.proposal_policy import build_proposal_policy, build_proposal_policy_v3
+from services.evidence_scope import require_source_need, require_context, assessment, encoded, retrieval, require_completeness, validate_feature_context
 from services.validator import DeckRules
 
 
@@ -441,14 +442,14 @@ def _validation_evidence(value: Any) -> dict:
     }
 
 
-def _policy(value: Any) -> dict:
+def _normalize_policy(value: Any, builder, version: str) -> dict:
     policy = _mapping(value, "source proposal policy")
-    if policy.get("proposal_policy_model_version") != "2" or (
-        policy.get("required_recommendation_context_model_version") != "2"
+    if policy.get("proposal_policy_model_version") != version or (
+        policy.get("required_recommendation_context_model_version") != version
     ):
         raise ValueError("Proposal Policy Model Version 2 is required")
     try:
-        normalized = build_proposal_policy({field: policy[field] for field in _POLICY_FIELDS})
+        normalized = builder({field: policy[field] for field in _POLICY_FIELDS})
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("source proposal policy is malformed") from exc
     if normalized != policy:
@@ -456,12 +457,12 @@ def _policy(value: Any) -> dict:
     return normalized
 
 
-def _semantic_policy(value: Any) -> dict:
+def _normalize_semantic_policy(value: Any, builder) -> dict:
     policy = _mapping(
         value, "semantic proposal policy", frozenset(_SEMANTIC_POLICY_FIELDS),
     )
     try:
-        normalized = build_proposal_policy({field: policy[field] for field in _POLICY_FIELDS})
+        normalized = builder({field: policy[field] for field in _POLICY_FIELDS})
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("semantic proposal policy is malformed") from exc
     expected = {key: deepcopy(normalized[key]) for key in _SEMANTIC_POLICY_FIELDS}
@@ -684,11 +685,11 @@ def _expected_result_identity(baseline_identity: dict, delta: dict) -> dict:
     ))
 
 
-def require_proposal_presentation(value: dict) -> dict:
+def _require_presentation(value: dict, *, version: str, review_fields: frozenset[str], semantic_policy, verify_evidence) -> dict:
     """Require a complete, internally consistent Proposal Presentation v1."""
     presentation = _mapping(value, "proposal presentation", _PRESENTATION_FIELDS)
     if presentation["proposal_presentation_model_version"] != (
-        PROPOSAL_PRESENTATION_MODEL_VERSION
+        version
     ) or presentation["source_proposal_model_version"] != "2" or (
         presentation["status"] != "presentable"
         or presentation["reason"] != "validator_accepted"
@@ -706,7 +707,7 @@ def require_proposal_presentation(value: dict) -> dict:
     )
     if semantic["source_proposal_model_version"] != "2":
         raise ValueError("proposal identity source version is unsupported")
-    policy = _semantic_policy(semantic["source_proposal_policy"])
+    policy = semantic_policy(semantic["source_proposal_policy"])
     delta = _semantic_delta(semantic["delta"])
     if policy["need_key"] != delta["need_key"] or policy["operation"] != "add_only" or (
         policy["quantity"] != delta["quantity"]
@@ -727,7 +728,7 @@ def require_proposal_presentation(value: dict) -> dict:
         semantic["captured_validation_semantics"],
     )
 
-    review = _mapping(presentation["review_artifact"], "review artifact", _REVIEW_FIELDS)
+    review = _mapping(presentation["review_artifact"], "review artifact", review_fields)
     if review["boundary_semantics"] != _BOUNDARY_SEMANTICS or (
         review["limitations"] != _REVIEW_LIMITATIONS
     ):
@@ -774,6 +775,9 @@ def require_proposal_presentation(value: dict) -> dict:
     ):
         raise ValueError("displayed validation is malformed or contradictory")
 
+    if verify_evidence:
+        _verify_scoped_evidence(review["evidence_context"], baseline, delta)
+
     presentation_identity = _require_identity(
         presentation["presentation_identity"],
         version_field="presentation_identity_version",
@@ -789,7 +793,7 @@ def require_proposal_presentation(value: dict) -> dict:
     return deepcopy(presentation)
 
 
-def build_proposal_presentation(proposal_result: dict) -> dict:
+def _build_presentation(proposal_result: dict, *, version: str, policy_normalizer, scoped: bool) -> dict:
     """Create one deterministic review artifact; grant no approval or action."""
     source = _mapping(proposal_result, "proposal result", _PROPOSAL_FIELDS)
     if source["proposal_model_version"] != "2" or source["status"] != "accepted" or (
@@ -797,7 +801,7 @@ def build_proposal_presentation(proposal_result: dict) -> dict:
     ):
         raise ValueError("an accepted and validated Proposal Model Version 2 is required")
 
-    policy = _policy(source["source_proposal_policy"])
+    policy = policy_normalizer(source["source_proposal_policy"])
     proposal = _mapping(
         source["proposal"], "accepted proposal", frozenset({"delta", "proposed_deck"}),
     )
@@ -906,12 +910,14 @@ def build_proposal_presentation(proposal_result: dict) -> dict:
         },
         "limitations": deepcopy(_REVIEW_LIMITATIONS),
     }
+    if scoped:
+        review_artifact["evidence_context"] = _scoped_evidence(context["row"], context["candidate"])
     presentation_identity = _identity(
         "presentation_identity_version", PRESENTATION_IDENTITY_VERSION,
         {"proposal_identity": proposal_identity, "review_artifact": review_artifact},
     )
     return {
-        "proposal_presentation_model_version": PROPOSAL_PRESENTATION_MODEL_VERSION,
+        "proposal_presentation_model_version": version,
         "source_proposal_model_version": "2",
         "status": "presentable",
         "reason": "validator_accepted",
@@ -919,3 +925,78 @@ def build_proposal_presentation(proposal_result: dict) -> dict:
         "presentation_identity": presentation_identity,
         "review_artifact": review_artifact,
     }
+
+
+SCOPED_PROPOSAL_PRESENTATION_MODEL_VERSION = "2"
+_SCOPED_REVIEW_FIELDS = _REVIEW_FIELDS | {"evidence_context"}
+
+
+def _scoped_evidence(row, candidate):
+    value = {"source_need": deepcopy(row["source_need"]),
+             "candidate_title_id": candidate["title_id"],
+             "matching_feature_evidence": deepcopy(candidate["matching_feature_evidence"]),
+             "support_context": deepcopy(candidate["support_context"]),
+             "source_evidence_completeness": deepcopy(row["source_evidence_completeness"])}
+    _verify_scoped_evidence(value, row["source_context"]["analyzed_deck_identity"],
+                            {"need_key": row["need_key"], "title_id": candidate["title_id"]})
+    return value
+
+
+def _verify_scoped_evidence(value, baseline, delta):
+    _mapping(value, "scoped presentation evidence", frozenset({"source_need", "candidate_title_id",
+              "matching_feature_evidence", "support_context", "source_evidence_completeness"}))
+    source = require_source_need(value["source_need"])
+    if (_encoded(source["source_identity"]["analyzed_deck_identity"]) != _encoded(baseline)
+            or _need_key({key: source[key] for key in ("zone", "finding_id", "dependency_id")}) != delta["need_key"]
+            or type(value["candidate_title_id"]) is not int or value["candidate_title_id"] != delta["title_id"]):
+        raise ValueError("scoped evidence contradicts proposal identity")
+    evidence = value["matching_feature_evidence"]
+    if type(evidence) is not list or not evidence:
+        raise ValueError("scoped evidence lacks matching routes")
+    for feature in evidence:
+        if (feature.get("rule_id") not in retrieval(source)["feature_rule_ids"]
+                or feature.get("relationship") != retrieval(source)["relationship"]):
+            raise ValueError("scoped route contradicts source requirements")
+        validate_feature_context(feature)
+    from services.candidate_comparison import _support_context
+    if encoded(value["support_context"]) != encoded(_support_context(evidence, source)):
+        raise ValueError("scoped support assessment contradicts originating evidence")
+    require_completeness(value["source_evidence_completeness"], source)
+
+
+def _policy(value):
+    return _normalize_policy(value, build_proposal_policy, "2")
+
+
+def _semantic_policy(value):
+    return _normalize_semantic_policy(value, build_proposal_policy)
+
+
+def _policy_v3(value):
+    return _normalize_policy(value, build_proposal_policy_v3, "3")
+
+
+def _semantic_policy_v3(value):
+    return _normalize_semantic_policy(value, build_proposal_policy_v3)
+
+
+def require_proposal_presentation(value: dict) -> dict:
+    """Legacy verifier. Presentation 2 is deliberately unsupported here."""
+    return _require_presentation(value, version="1", review_fields=_REVIEW_FIELDS,
+                                 semantic_policy=_semantic_policy, verify_evidence=False)
+
+
+def require_proposal_presentation_v2(value: dict) -> dict:
+    """Verify the scoped artifact, including exact captured evidence."""
+    return _require_presentation(value, version="2", review_fields=_SCOPED_REVIEW_FIELDS,
+                                 semantic_policy=_semantic_policy_v3, verify_evidence=True)
+
+
+def build_proposal_presentation(proposal_result: dict) -> dict:
+    """Legacy presentation producer, retaining Policy 2 normalization."""
+    return _build_presentation(proposal_result, version="1", policy_normalizer=_policy, scoped=False)
+
+
+def build_proposal_presentation_v2(proposal_result: dict) -> dict:
+    """Produce the scoped read-only presentation from a Policy 3 proposal."""
+    return _build_presentation(proposal_result, version="2", policy_normalizer=_policy_v3, scoped=True)

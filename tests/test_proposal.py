@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 import sqlite3
+import json
+from pathlib import Path
 from unittest.mock import patch
 import unittest
 
@@ -19,13 +21,18 @@ from tests.test_recommendation_context import models, set_eligible_ids
 
 
 def inputs(*, target="main", eligible_ids=None):
-    facts = candidate_facts()
-    set_eligible_ids(facts, 1, [101] if eligible_ids is None else eligible_ids)
-    decisions, comparison = models([rule()], facts=facts)
-    context = build_recommendation_context(decisions, comparison)
-    spec = policy_spec()
-    spec["target_zone"] = target
-    return context, build_proposal_policy(spec)
+    # Frozen output of the baseline v2 owners, independent of scoped owners.
+    frozen = json.loads((Path(__file__).parent / "fixtures" /
+                         "legacy_proposal_inputs_v2.json").read_text(encoding="utf-8"))
+    context, policy = frozen["context"], frozen["policy"]
+    policy["target_zone"] = target
+    if eligible_ids is not None:
+        for row in context["contexts"]:
+            for item in row["returned_candidate_facts"]:
+                if item["title_id"] == 1:
+                    item["eligible_printing_ids"] = list(eligible_ids)
+                    item["eligibility"]["format_legality"]["eligible_printing_ids"] = list(eligible_ids)
+    return context, policy
 
 
 class ProposalTests(unittest.TestCase):

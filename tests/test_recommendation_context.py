@@ -59,8 +59,8 @@ class RecommendationContextTests(unittest.TestCase):
         result = build_recommendation_context(decisions, comparison)
         row = context(result)
         source = comparison["need_matrices"][0]
-        self.assertEqual(RECOMMENDATION_CONTEXT_MODEL_VERSION, "2")
-        self.assertEqual(result["recommendation_context_model_version"], "2")
+        self.assertEqual(RECOMMENDATION_CONTEXT_MODEL_VERSION, "3")
+        self.assertEqual(result["recommendation_context_model_version"], "3")
         self.assertEqual(
             result["analyzed_deck_identity"],
             comparison["source_context"]["analyzed_deck_identity"],
@@ -80,7 +80,7 @@ class RecommendationContextTests(unittest.TestCase):
             "matching_feature_evidence"])
         self.assertEqual(alpha["required_feature_eligibility"], source["candidates"][0][
             "required_feature_eligibility"])
-        self.assertEqual(result["source_candidate_facts_model_version"], "3")
+        self.assertEqual(result["source_candidate_facts_model_version"], "4")
         self.assertEqual(row["decision"]["policy_source"],
                          decisions["decisions"][0]["policy_source"])
 

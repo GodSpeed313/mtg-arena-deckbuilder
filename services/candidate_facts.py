@@ -6,6 +6,8 @@ compare cards, score them, or recommend deck changes.
 """
 from __future__ import annotations
 
+from services.evidence_scope import require_source_need, retrieval, normalize, encoded, verify_source_analysis
+
 from copy import deepcopy
 import sqlite3
 
@@ -16,7 +18,7 @@ from services.intelligence import classify_card
 from services.packages import PACKAGE_MODEL_VERSION
 
 
-CANDIDATE_FACTS_MODEL_VERSION = "3"
+CANDIDATE_FACTS_MODEL_VERSION = "4"
 
 _ELIGIBILITY_STATUSES = frozenset({"eligible", "eligibility_unknown"})
 
@@ -28,44 +30,7 @@ def _require_mapping(value, label: str) -> dict:
 
 
 def _source_need(value) -> dict:
-    source = _require_mapping(value, "source need")
-    required = (
-        "zone",
-        "finding_id",
-        "dependency_id",
-        "dependency_label",
-        "missing_side_name",
-        "missing_side",
-        "required_feature_rule_ids",
-        "feature_matching_semantics",
-        "required_relationship",
-    )
-    if any(key not in source for key in required):
-        raise ValueError("source need is missing required provenance")
-    if source["missing_side_name"] != "enabler":
-        raise ValueError("candidate facts require a missing enabler side")
-    if source["zone"] not in {"main", "sideboard", "commander"}:
-        raise ValueError("source need has an unsupported zone")
-    rule_ids = source["required_feature_rule_ids"]
-    if (
-        not isinstance(rule_ids, list)
-        or not rule_ids
-        or any(not isinstance(rule_id, str) or not rule_id for rule_id in rule_ids)
-        or len(set(rule_ids)) != len(rule_ids)
-        or not isinstance(source["required_relationship"], str)
-        or not source["required_relationship"]
-        or source["feature_matching_semantics"] != "any"
-    ):
-        raise ValueError("source need has malformed feature requirements")
-    missing = _require_mapping(source["missing_side"], "missing side")
-    if (
-        missing.get("acceptable_feature_rule_ids") != source["required_feature_rule_ids"]
-        or missing.get("feature_rule_ids") != source["required_feature_rule_ids"]
-        or missing.get("matching_semantics") != source["feature_matching_semantics"]
-        or missing.get("relationship") != source["required_relationship"]
-    ):
-        raise ValueError("source need feature requirements are contradictory")
-    return source
+    return require_source_need(value)
 
 
 def _canonical_facts(card) -> dict:
@@ -119,7 +84,7 @@ def _validate_candidate(
     )
     if any(key not in item for key in required):
         raise ValueError("candidate is missing required facts")
-    if item["source_need"] != source:
+    if encoded(require_source_need(item["source_need"])) != encoded(source):
         raise ValueError("candidate source need contradicts its pool")
     if item["title_id"] != card.title_id or item["name"] != card.name:
         raise ValueError("candidate identity contradicts canonical data")
@@ -143,10 +108,10 @@ def _validate_candidate(
     if (
         required_feature.get("status") != "matched"
         or required_feature.get("feature_rule_ids")
-        != source["required_feature_rule_ids"]
+        != retrieval(source)["feature_rule_ids"]
         or required_feature.get("matching_semantics")
-        != source["feature_matching_semantics"]
-        or required_feature.get("relationship") != source["required_relationship"]
+        != retrieval(source)["matching_semantics"]
+        or required_feature.get("relationship") != retrieval(source)["relationship"]
     ):
         raise ValueError("candidate eligibility contradicts source requirements")
     if not isinstance(item["unresolved_eligibility"], list):
@@ -155,27 +120,30 @@ def _validate_candidate(
     evidence = item["matching_feature_evidence"]
     if not isinstance(evidence, list) or not evidence:
         raise ValueError("candidate requires exact need-match evidence")
-    required_ids = set(source["required_feature_rule_ids"])
-    relationship = source["required_relationship"]
+    required_ids = set(retrieval(source)["feature_rule_ids"])
+    relationship = retrieval(source)["relationship"]
     reviewed = classification["features"]
     if any(
         not isinstance(feature, dict)
         or feature.get("rule_id") not in required_ids
         or feature.get("relationship") != relationship
-        or feature not in reviewed
+        or not any(encoded(feature) == encoded(item) for item in reviewed)
         for feature in evidence
     ):
         raise ValueError("candidate need-match evidence is not reviewed classifier evidence")
-    return item
+    detached = deepcopy(item)
+    detached["source_need"] = deepcopy(source)
+    detached["matching_feature_evidence"] = normalize(evidence)
+    return detached
 
 
 def derive_candidate_facts(
-    candidate_pools: dict, con: sqlite3.Connection,
+    candidate_pools: dict, con: sqlite3.Connection, *, source_analysis: dict,
 ) -> dict:
-    """Enrich returned Version 3 candidates without rediscovery or mutation."""
+    """Enrich returned Version 4 candidates without rediscovery or mutation."""
     source_output = _require_mapping(candidate_pools, "candidate pool")
     if source_output.get("candidate_model_version") != CANDIDATE_MODEL_VERSION:
-        raise ValueError("candidate facts require candidate model version 3")
+        raise ValueError("candidate facts require candidate model version 4")
     analyzed_deck_identity = require_deck_snapshot_identity(
         source_output.get("analyzed_deck_identity")
     )
@@ -189,13 +157,16 @@ def derive_candidate_facts(
         "ordering",
         "limitations",
     )):
-        raise ValueError("candidate pool is missing Version 3 context")
+        raise ValueError("candidate pool is missing Version 4 context")
     if source_output.get("trigger_finding_type") != "support_need":
         raise ValueError("unsupported candidate-pool trigger semantics")
     pools = source_output.get("pools")
     if not isinstance(pools, list):
         raise ValueError("candidate pools must be a list")
 
+    verify_source_analysis(pools, source_analysis)
+    if encoded(analyzed_deck_identity) != encoded(source_analysis["analyzed_deck_identity"]):
+        raise ValueError("candidate deck identity contradicts originating analysis")
     title_ids = set()
     for pool in pools:
         pool = _require_mapping(pool, "candidate pool entry")

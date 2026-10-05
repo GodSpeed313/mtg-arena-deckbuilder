@@ -1,18 +1,20 @@
-"""Deterministic strategic-fit signals derived only from Comparison Model v2.
+"""Deterministic strategic-fit signals derived only from Comparison Model v3.
 
 Signals in this module describe explicit reviewed facts.  They do not assign
 weights, choose candidates, or mutate deck state.
 """
 from __future__ import annotations
 
+from services.evidence_scope import require_source_need, retrieval, require_context, context_view, assessment, encoded, require_completeness
+
 from collections import Counter, defaultdict
 from copy import deepcopy
 from typing import Any
 
 
-STRATEGIC_FIT_MODEL_VERSION = "2"
-STRATEGIC_SIGNAL_REGISTRY_VERSION = "1"
-_COMPARISON_MODEL_VERSION = "2"
+STRATEGIC_FIT_MODEL_VERSION = "3"
+STRATEGIC_SIGNAL_REGISTRY_VERSION = "2"
+_COMPARISON_MODEL_VERSION = "3"
 _ZONE_ORDER = {"main": 0, "sideboard": 1, "commander": 2}
 
 
@@ -49,6 +51,10 @@ _SIGNAL_SPECS = (
      "At least one matching reviewed support entry preserves an unsupported remainder."),
     ("fit.support.alternative_rule_paths.v1", "support", "candidate_need",
      "The current need accepts more than one alternative reviewed rule ID."),
+    ("fit.support.origin_unestablished.v1", "support", "candidate_need",
+     "A recognized matching route has unestablished originating context."),
+    ("fit.evidence.reviewed_scope_present.v1", "evidence", "need_pool",
+     "The originating reviewed evidence boundary is preserved, not exhaustive."),
     ("fit.eligibility.unresolved_dimensions_present.v1", "eligibility", "title",
      "One or more explicitly tracked eligibility dimensions remain unresolved."),
     ("fit.eligibility.no_unresolved_dimensions.v1", "eligibility", "title",
@@ -156,54 +162,14 @@ def _sort_signals(signals: list[dict]) -> list[dict]:
 
 
 def _validate_source_need(value: Any, expected_key: tuple[str, str, str]) -> dict:
-    source = _mapping(value, "source need")
+    source = require_source_need(value)
     if _need_key(source) != expected_key:
         raise ValueError("need key contradicts source need")
-    required = source.get("required_feature_rule_ids")
-    if (
-        not isinstance(required, list)
-        or not required
-        or any(not isinstance(item, str) or not item for item in required)
-        or len(required) != len(set(required))
-        or source.get("feature_matching_semantics") != "any"
-        or not isinstance(source.get("required_relationship"), str)
-        or not source["required_relationship"]
-        or source.get("missing_side_name") != "enabler"
-    ):
-        raise ValueError("source need has malformed feature requirements")
-    missing = _mapping(source.get("missing_side"), "source missing side")
-    if (
-        missing.get("acceptable_feature_rule_ids") != required
-        or missing.get("feature_rule_ids") != required
-        or missing.get("matching_semantics") != "any"
-        or missing.get("relationship") != source["required_relationship"]
-    ):
-        raise ValueError("source need feature requirements are contradictory")
     return source
 
 
 def _validate_context(value: Any) -> dict:
-    context = _mapping(value, "support dependency context")
-    if context.get("availability") not in {
-        "unconditional", "conditional", "partially_reviewed",
-    }:
-        raise ValueError("support availability is malformed")
-    if context.get("parse_status") not in {"supported", "partial"}:
-        raise ValueError("support parse status is malformed")
-    prerequisites = _mapping(context.get("prerequisites"), "support prerequisites")
-    trigger = prerequisites.get("trigger")
-    if trigger is not None and not isinstance(trigger, dict):
-        raise ValueError("support trigger prerequisite is malformed")
-    for field in ("costs", "conditions", "qualifiers"):
-        _list(prerequisites.get(field), f"support prerequisite {field}")
-    _list(context.get("unsupported_remainder"), "support unsupported remainder")
-    ability_kind = context.get("ability_kind")
-    if ability_kind is not None and not isinstance(ability_kind, str):
-        raise ValueError("support ability kind is malformed")
-    effect = context.get("effect")
-    if effect is not None and not isinstance(effect, dict):
-        raise ValueError("support effect is malformed")
-    return context
+    return require_context(value)
 
 
 def _validate_eligibility(title: dict) -> None:
@@ -262,14 +228,14 @@ def _validate_support(
     entries = _list(support.get("entries"), "support entries")
     if (
         support.get("matching_semantics") != "any"
-        or accepted != source_need["required_feature_rule_ids"]
+        or accepted != retrieval(source_need)["feature_rule_ids"]
         or not isinstance(matched, list)
         or not matched
         or any(not isinstance(item, str) or not item for item in matched)
         or len(matched) != len(set(matched))
         or not set(matched) <= set(accepted)
         or not entries
-        or support.get("unresolved") != []
+        or support.get("unresolved") != [{"route_index": index, "reasons": assessment(entry["dependency_context"])["reasons"]} for index, entry in enumerate(entries) if assessment(entry["dependency_context"])["establishment"] == "unestablished"]
     ):
         raise ValueError("support context contradicts source need")
     entry_rule_ids = []
@@ -279,7 +245,7 @@ def _validate_support(
         if (
             not isinstance(rule_id, str) or not rule_id
             or rule_id not in accepted
-            or entry.get("relationship") != source_need["required_relationship"]
+            or entry.get("relationship") != retrieval(source_need)["relationship"]
         ):
             raise ValueError("support entry has malformed rule identity")
         feature = _mapping(entry.get("feature_evidence"), "support feature evidence")
@@ -287,10 +253,12 @@ def _validate_support(
             feature.get("rule_id") != rule_id
             or feature.get("relationship") != entry["relationship"]
             or feature.get("evidence") != entry.get("evidence")
-            or feature.get("dependency_context") != entry.get("dependency_context")
+            or encoded(feature.get("dependency_context")) != encoded(entry.get("dependency_context"))
         ):
             raise ValueError("support entry contradicts feature evidence")
         _validate_context(entry.get("dependency_context"))
+        if encoded(entry.get("assessment")) != encoded(assessment(entry["dependency_context"])):
+            raise ValueError("support assessment contradicts origin")
         entry_rule_ids.append(rule_id)
     if sorted(set(entry_rule_ids)) != sorted(matched):
         raise ValueError("matched rule IDs contradict support entries")
@@ -387,10 +355,10 @@ def _pool_signals(matrix: dict, key: tuple[str, str, str]) -> list[dict]:
     if (
         completeness["status"] == "unknown"
         and completeness["reason"]
-        == "source_evidence_boundary_not_present_in_candidate_facts_v3"
+        == "reviewed_features_not_exhaustive"
     ):
         signals.append(_signal(
-            "fit.evidence.zone_boundary_unavailable.v1",
+            "fit.evidence.reviewed_scope_present.v1",
             [_fact(_matrix_path(key, "evidence_completeness"), completeness)],
         ))
     return _sort_signals(signals)
@@ -445,26 +413,27 @@ def _candidate_signals(
     entries = support["entries"]
     support_path = _candidate_path(key, title_id, "support_context")
     predicates = (
+        ("fit.support.origin_unestablished.v1", lambda entry: assessment(entry["dependency_context"])["establishment"] == "unestablished"),
         ("fit.support.unconditional.v1",
-         lambda entry: entry["dependency_context"]["availability"] == "unconditional"),
+         lambda entry: context_view(entry["dependency_context"])["availability"] == "unconditional"),
         ("fit.support.prerequisites_present.v1", lambda entry: bool(
-            entry["dependency_context"]["prerequisites"]["trigger"] is not None
-            or entry["dependency_context"]["prerequisites"]["costs"]
-            or entry["dependency_context"]["prerequisites"]["conditions"]
-            or entry["dependency_context"]["prerequisites"]["qualifiers"]
+            context_view(entry["dependency_context"])["prerequisites"]["trigger"] is not None
+            or context_view(entry["dependency_context"])["prerequisites"]["costs"]
+            or context_view(entry["dependency_context"])["prerequisites"]["conditions"]
+            or context_view(entry["dependency_context"])["prerequisites"]["qualifiers"]
         )),
         ("fit.support.conditional.v1",
-         lambda entry: entry["dependency_context"]["availability"] == "conditional"),
+         lambda entry: context_view(entry["dependency_context"])["availability"] == "conditional"),
         ("fit.support.triggered.v1",
-         lambda entry: entry["dependency_context"]["ability_kind"] == "triggered"),
+         lambda entry: context_view(entry["dependency_context"])["ability_kind"] == "triggered"),
         ("fit.support.activated.v1",
-         lambda entry: entry["dependency_context"]["ability_kind"] == "activated"),
+         lambda entry: context_view(entry["dependency_context"])["ability_kind"] == "activated"),
         ("fit.support.partial.v1", lambda entry: (
-            entry["dependency_context"]["availability"] == "partially_reviewed"
-            or entry["dependency_context"]["parse_status"] == "partial"
+            context_view(entry["dependency_context"])["availability"] == "partially_reviewed"
+            or context_view(entry["dependency_context"])["parse_status"] == "partial"
         )),
         ("fit.support.unsupported_remainder_present.v1",
-         lambda entry: bool(entry["dependency_context"]["unsupported_remainder"])),
+         lambda entry: bool(context_view(entry["dependency_context"])["unsupported_remainder"])),
     )
     for signal_id, predicate in predicates:
         matching = [deepcopy(entry) for entry in entries if predicate(entry)]
@@ -563,9 +532,9 @@ def build_strategic_fit_signals(candidate_comparison: dict) -> dict:
             )
             if (
                 required.get("status") != "matched"
-                or required.get("feature_rule_ids") != source_need["required_feature_rule_ids"]
+                or required.get("feature_rule_ids") != retrieval(source_need)["feature_rule_ids"]
                 or required.get("matching_semantics") != "any"
-                or required.get("relationship") != source_need["required_relationship"]
+                or required.get("relationship") != retrieval(source_need)["relationship"]
             ):
                 raise ValueError("required feature eligibility contradicts source need")
             evidence = _list(candidate.get("matching_feature_evidence"), "matching feature evidence")
@@ -604,14 +573,7 @@ def build_strategic_fit_signals(candidate_comparison: dict) -> dict:
                 raise ValueError("pool-local exclusive packages contradict title package facts")
 
         _validate_dimensions(matrix.get("dimension_comparisons"), candidate_ids)
-        completeness = _mapping(matrix.get("evidence_completeness"), "evidence completeness")
-        if (
-            completeness.get("status") != "unknown"
-            or completeness.get("reason")
-            != "source_evidence_boundary_not_present_in_candidate_facts_v3"
-            or not isinstance(completeness.get("feature_level_unsupported_remainders"), list)
-        ):
-            raise ValueError("evidence completeness is malformed")
+        require_completeness(matrix.get("evidence_completeness"), source_need)
         matrices.append((key, matrix))
 
     for title_id, title in titles.items():

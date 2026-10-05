@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from services.evidence_scope import require_source_need, encoded, require_completeness, require_captured_evidence, retrieval
 from typing import Any
 
 from mtgadb.deck_identity import require_deck_snapshot_identity
 
 
-RECOMMENDATION_CONTEXT_MODEL_VERSION = "2"
+RECOMMENDATION_CONTEXT_MODEL_VERSION = "3"
 _ZONES = {"main": 0, "sideboard": 1, "commander": 2}
 _OUTCOMES = frozenset({
     "recommendable", "top_tie", "indeterminate_ordering",
@@ -205,16 +206,16 @@ def build_recommendation_context(decisions: dict, comparison: dict) -> dict:
     comparison = _mapping(comparison, "candidate comparison")
     if decisions.get("recommendation_decision_model_version") != "2":
         raise ValueError("Recommendation Decision Model Version 2 is required")
-    if comparison.get("candidate_comparison_model_version") != "2":
-        raise ValueError("Candidate Comparison Model Version 2 is required")
+    if comparison.get("candidate_comparison_model_version") != "3":
+        raise ValueError("Candidate Comparison Model Version 3 is required")
     for field in ("source_candidate_ordering_model_version",
                   "source_candidate_comparison_model_version",
                   "source_strategic_fit_model_version",
                   "source_strategic_preference_policy_model_version"):
-        if decisions.get(field) != "2":
+        if decisions.get(field) != ("3" if field in ("source_candidate_comparison_model_version", "source_strategic_fit_model_version") else "2"):
             raise ValueError("recommendation source model version is unsupported")
-    for field, expected in (("source_candidate_facts_model_version", "3"),
-                            ("source_candidate_model_version", "3"),
+    for field, expected in (("source_candidate_facts_model_version", "4"),
+                            ("source_candidate_model_version", "4"),
                             ("functional_package_model_version", "1")):
         if comparison.get(field) != expected:
             raise ValueError("comparison source model version is unsupported")
@@ -244,9 +245,18 @@ def build_recommendation_context(decisions: dict, comparison: dict) -> dict:
         key = _key(matrix.get("need_key"))
         if key in matrices:
             raise ValueError("comparison structured need is duplicated")
-        source_need = _mapping(matrix.get("source_need"), "source need")
+        source_need = require_source_need(matrix.get("source_need"))
         if _key({field: source_need.get(field) for field in ("zone", "finding_id", "dependency_id")}) != key:
             raise ValueError("source need identity contradicts comparison matrix")
+        if encoded(source_need["source_identity"]["analyzed_deck_identity"]) != encoded(analyzed_deck_identity):
+            raise ValueError("source scope deck contradicts recommendation source")
+        require_completeness(matrix.get("evidence_completeness"), source_need)
+        for occurrence in matrix["candidates"]:
+            require_captured_evidence(source_need, occurrence["matching_feature_evidence"],
+                                      occurrence["support_context"], matrix["evidence_completeness"], analyzed_deck_identity)
+            required = occurrence.get("required_feature_eligibility", {})
+            if any(required.get(key) != value for key, value in retrieval(source_need).items()):
+                raise ValueError("required-feature alias contradicts preserved source")
         matrices[key] = matrix
     decision_rows = {}
     for row in _list(decisions.get("decisions"), "recommendation decisions"):
@@ -303,11 +313,11 @@ def build_recommendation_context(decisions: dict, comparison: dict) -> dict:
         "analyzed_deck_identity": analyzed_deck_identity,
         "source_recommendation_decision_model_version": "2",
         "source_candidate_ordering_model_version": "2",
-        "source_strategic_fit_model_version": "2",
+        "source_strategic_fit_model_version": "3",
         "source_strategic_preference_policy_model_version": "2",
-        "source_candidate_comparison_model_version": "2",
-        "source_candidate_facts_model_version": "3",
-        "source_candidate_model_version": "3",
+        "source_candidate_comparison_model_version": "3",
+        "source_candidate_facts_model_version": "4",
+        "source_candidate_model_version": "4",
         "functional_package_model_version": "1",
         "policy_id": policy_id,
         "contexts": contexts,

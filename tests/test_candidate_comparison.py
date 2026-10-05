@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 import unittest
+import sqlite3
+from functools import lru_cache
 
 from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.model import Deck
+from mtgadb.model import Card, CardPrinting
+from mtgadb import canonical
+from services.abilities import Ability, Trigger, Cost, Effect, UnsupportedRemainder
+from services.evidence_scope import context_from_ability, structural_context, source_need as scoped_need, retrieval
+from services.intelligence import analyze_deck
 from services.candidate_comparison import (
     CANDIDATE_COMPARISON_MODEL_VERSION,
     build_candidate_comparisons,
@@ -16,20 +23,16 @@ def context(
     availability="unconditional", ability_kind="spell_effect", *,
     trigger=None, costs=None, parse_status="supported", unsupported=None,
 ):
-    return {
-        "ability_id": "ability.001",
-        "ability_kind": ability_kind,
-        "availability": availability,
-        "prerequisites": {
-            "trigger": deepcopy(trigger),
-            "costs": deepcopy(costs or []),
-            "conditions": [],
-            "qualifiers": [],
-        },
-        "effect": {"kind": "gain_life", "amount": 1},
-        "parse_status": parse_status,
-        "unsupported_remainder": deepcopy(unsupported or []),
-    }
+    parsed_trigger = None if trigger is None else Trigger(
+        trigger["event"], trigger["subject"], "you", True, "Reviewed trigger.",
+        tuple(trigger.get("conditions", [])),
+    )
+    ability = Ability("ability.001", 1, ability_kind, "Reviewed source.", parse_status,
+                      trigger=parsed_trigger,
+                      costs=tuple(Cost(**{"evidence": "Reviewed cost.", **item}) for item in costs or []),
+                      unsupported_remainder=tuple(UnsupportedRemainder(**{"scope": "effect", **item})
+                                                  for item in unsupported or []))
+    return context_from_ability(ability, Effect("ability.001.effect.001", "gain_life", "You gain 1 life.", amount=1))
 
 
 def feature(rule_id, evidence, dependency_context, relationship="producer"):
@@ -53,25 +56,26 @@ def package(package_id, evidence):
     }
 
 
+@lru_cache(maxsize=1)
+def originating_analysis():
+    with sqlite3.connect(":memory:") as con:
+        con.row_factory = sqlite3.Row
+        con.executescript(canonical.SCHEMA)
+        canonical.load_cards(con, [
+            Card(2, "Reviewed listeners", types="Enchantment", rules_text="Whenever you gain life, draw a card.\nWhenever you cast an instant or sorcery spell, draw a card."),
+            Card(3, "Reviewed listener", types="Enchantment", rules_text="Whenever you gain life, draw a card."),
+        ])
+        canonical.load_printings(con, [CardPrinting(201, 2, "AAA", "2", "common"), CardPrinting(301, 3, "AAA", "3", "common")])
+        return analyze_deck(Deck(main={201: 1}, sideboard={301: 1}), con)
+
+
 def need(zone, finding_id, dependency_id, rule_ids, relationship="producer"):
-    return {
-        "zone": zone,
-        "finding_id": finding_id,
-        "dependency_id": dependency_id,
-        "dependency_label": dependency_id.split(".")[1],
-        "missing_side_name": "enabler",
-        "missing_side": {
-            "relationship": relationship,
-            "acceptable_feature_rule_ids": list(rule_ids),
-            "matching_semantics": "any",
-            "feature_rule_ids": list(rule_ids),
-            "copy_count": 0,
-            "cards": [],
-        },
-        "required_feature_rule_ids": list(rule_ids),
-        "feature_matching_semantics": "any",
-        "required_relationship": relationship,
-    }
+    analysis = originating_analysis()
+    finding = next(item for item in analysis["zones"][zone]["needs"] if item["finding_id"] == finding_id)
+    result = scoped_need(analysis, zone, finding)
+    assert result["dependency_id"] == dependency_id
+    assert retrieval(result) == {"feature_rule_ids": list(rule_ids), "matching_semantics": "any", "relationship": relationship}
+    return result
 
 
 def eligibility(ownership):
@@ -127,9 +131,9 @@ def title(
 def candidate(title_row, source_need, evidence):
     required = {
         "status": "matched",
-        "feature_rule_ids": deepcopy(source_need["required_feature_rule_ids"]),
+        "feature_rule_ids": deepcopy(retrieval(source_need)["feature_rule_ids"]),
         "matching_semantics": "any",
-        "relationship": source_need["required_relationship"],
+        "relationship": retrieval(source_need)["relationship"],
     }
     return {
         "title_id": title_row["title_id"],
@@ -201,17 +205,7 @@ def candidate_facts():
     )
     spell = feature(
         "type.spells.v1", "Sorcery",
-        {
-            "ability_id": None,
-            "ability_kind": "card_type",
-            "availability": "unconditional",
-            "prerequisites": {
-                "trigger": None, "costs": [], "conditions": [], "qualifiers": [],
-            },
-            "effect": None,
-            "parse_status": "supported",
-            "unsupported_remainder": [],
-        },
+        structural_context(["Sorcery"]),
         "enabler",
     )
     alpha = title(
@@ -234,8 +228,8 @@ def candidate_facts():
         [{"arena_id": 301, "set_code": "AAA", "collector_number": "3", "rarity": "common"}],
     )
     facts = {
-        "candidate_facts_model_version": "3",
-        "source_candidate_model_version": "3",
+        "candidate_facts_model_version": "4",
+        "source_candidate_model_version": "4",
         "functional_package_model_version": "1",
         "candidate_title_count": 3,
         "source_context": {
@@ -297,8 +291,8 @@ class CandidateComparisonTests(unittest.TestCase):
         facts = candidate_facts()
         result = build_candidate_comparisons(facts)
         pool = matrix(result)
-        self.assertEqual(CANDIDATE_COMPARISON_MODEL_VERSION, "2")
-        self.assertEqual(result["candidate_comparison_model_version"], "2")
+        self.assertEqual(CANDIDATE_COMPARISON_MODEL_VERSION, "3")
+        self.assertEqual(result["candidate_comparison_model_version"], "3")
         self.assertEqual(
             result["source_context"]["analyzed_deck_identity"],
             facts["source_context"]["analyzed_deck_identity"],
@@ -339,47 +333,37 @@ class CandidateComparisonTests(unittest.TestCase):
     def test_support_context_is_plural_and_preserves_prerequisites(self):
         pool = matrix(build_candidate_comparisons(candidate_facts()))
         by_title = {row["title_id"]: row["support_context"] for row in pool["candidates"]}
-        self.assertEqual(by_title[1]["entries"][0]["dependency_context"]["availability"],
+        self.assertEqual(by_title[1]["entries"][0]["assessment"]["availability"],
                          "unconditional")
-        self.assertEqual(by_title[2]["entries"][0]["dependency_context"]["ability_kind"],
+        self.assertEqual(by_title[2]["entries"][0]["dependency_context"]["origin"]["ability_kind"],
                          "triggered")
         self.assertEqual(
-            by_title[2]["entries"][0]["dependency_context"]["prerequisites"]["trigger"]["event"],
+            by_title[2]["entries"][0]["assessment"]["prerequisites"]["trigger"]["event"],
             "spell_cast",
         )
         self.assertEqual(len(by_title[3]["entries"]), 2)
-        kinds = {entry["dependency_context"]["ability_kind"] for entry in by_title[3]["entries"]}
-        availability = {entry["dependency_context"]["availability"]
+        kinds = {entry["dependency_context"]["origin"]["ability_kind"] for entry in by_title[3]["entries"]}
+        availability = {entry["assessment"]["availability"]
                         for entry in by_title[3]["entries"]}
         self.assertEqual(kinds, {"activated", "triggered"})
-        self.assertEqual(availability, {"conditional", "partially_reviewed"})
+        self.assertEqual(availability, {"conditional", "unestablished"})
         activated_entry = next(
             entry for entry in by_title[3]["entries"]
-            if entry["dependency_context"]["ability_kind"] == "activated"
+            if entry["dependency_context"]["origin"]["ability_kind"] == "activated"
         )
         self.assertEqual(
-            activated_entry["dependency_context"]["prerequisites"]["costs"][0]["kind"],
+            activated_entry["assessment"]["prerequisites"]["costs"][0]["kind"],
             "tap",
         )
 
     def test_alternative_rule_ids_remain_explicit(self):
         facts = candidate_facts()
-        pool = facts["per_need"][0]
-        alternatives = ["effect.lifegain.v1", "type.spells.v1"]
-        pool["source_need"]["required_feature_rule_ids"] = alternatives
-        pool["source_need"]["missing_side"]["acceptable_feature_rule_ids"] = alternatives
-        pool["source_need"]["missing_side"]["feature_rule_ids"] = alternatives
-        for candidate_row in pool["candidates"]:
-            candidate_row["source_need"] = deepcopy(pool["source_need"])
-            candidate_row["eligibility"]["required_feature"]["feature_rule_ids"] = alternatives
-        for title_row in facts["candidate_facts_by_title"]:
-            for match in title_row["per_need_matches"]:
-                if match["source_need"]["zone"] == "main" and match["source_need"]["finding_id"] == pool["source_need"]["finding_id"]:
-                    match["source_need"] = deepcopy(pool["source_need"])
+        from tests.test_strategic_fit import add_alternative_rule_path
+        source = add_alternative_rule_path(facts)
         result = build_candidate_comparisons(facts)
-        support = matrix(result)["candidates"][0]["support_context"]
+        support = matrix(result, finding="need.creature_token_entry.enabler.v2")["candidates"][0]["support_context"]
         self.assertEqual(support["matching_semantics"], "any")
-        self.assertEqual(support["acceptable_feature_rule_ids"], alternatives)
+        self.assertEqual(support["acceptable_feature_rule_ids"], source["missing_side"]["acceptable_feature_rule_ids"])
 
     def test_printings_ownership_truncation_and_evidence_completeness(self):
         result = build_candidate_comparisons(candidate_facts())
@@ -402,9 +386,10 @@ class CandidateComparisonTests(unittest.TestCase):
         self.assertEqual(completeness["status"], "unknown")
         self.assertEqual(
             completeness["reason"],
-            "source_evidence_boundary_not_present_in_candidate_facts_v3",
+            "reviewed_features_not_exhaustive",
         )
-        self.assertTrue(completeness["feature_level_unsupported_remainders"])
+        self.assertEqual(completeness["source_evidence_boundary"], matrix(result)["source_need"]["evidence_boundary"])
+        self.assertTrue(matrix(result)["candidates"][2]["support_context"]["unresolved"])
 
     def test_output_is_deterministic_under_input_reordering(self):
         first_input = candidate_facts()

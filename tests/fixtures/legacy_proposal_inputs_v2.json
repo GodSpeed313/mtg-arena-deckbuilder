@@ -1,0 +1,1379 @@
+{
+  "context": {
+    "recommendation_context_model_version": "2",
+    "analyzed_deck_identity": {
+      "deck_snapshot_identity_version": "1",
+      "digest_algorithm": "sha256",
+      "canonical_payload": {
+        "main": [
+          [
+            201,
+            1
+          ]
+        ],
+        "sideboard": [
+          [
+            301,
+            1
+          ]
+        ],
+        "commander": []
+      },
+      "digest": "db72cc97290147360c556e370877ced55f926ba8fe15bc2939b6953771206459"
+    },
+    "source_recommendation_decision_model_version": "2",
+    "source_candidate_ordering_model_version": "2",
+    "source_strategic_fit_model_version": "2",
+    "source_strategic_preference_policy_model_version": "2",
+    "source_candidate_comparison_model_version": "2",
+    "source_candidate_facts_model_version": "3",
+    "source_candidate_model_version": "3",
+    "functional_package_model_version": "1",
+    "policy_id": "policy.test.v1",
+    "contexts": [
+      {
+        "need_key": {
+          "zone": "main",
+          "finding_id": "need.lifegain.enabler.v1",
+          "dependency_id": "dependency.lifegain.v1"
+        },
+        "decision": {
+          "need_key": {
+            "zone": "main",
+            "finding_id": "need.lifegain.enabler.v1",
+            "dependency_id": "dependency.lifegain.v1"
+          },
+          "source_need_reference": "need_matrices[need_key=main|need.lifegain.enabler.v1|dependency.lifegain.v1].source_need",
+          "policy_id": "policy.test.v1",
+          "policy_source": {
+            "kind": "explicit_user",
+            "provenance": {
+              "reference": "test declaration"
+            }
+          },
+          "ordering_model_version": "2",
+          "ordering_status": "strategically_ordered",
+          "outcome": "recommendable",
+          "reason": "unique_first_under_explicit_policy",
+          "candidate": {
+            "title_id": 1,
+            "name": "Alpha",
+            "eligibility_status": "eligible",
+            "unresolved_eligibility": []
+          },
+          "blocked_candidate": null,
+          "ordered_first_group": [
+            1
+          ],
+          "relation_evidence": [
+            {
+              "need_key": {
+                "zone": "main",
+                "finding_id": "need.lifegain.enabler.v1",
+                "dependency_id": "dependency.lifegain.v1"
+              },
+              "policy_id": "policy.test.v1",
+              "left": {
+                "title_id": 1,
+                "name": "Alpha"
+              },
+              "right": {
+                "title_id": 2,
+                "name": "Beta"
+              },
+              "status": "precedes",
+              "preceding_title_id": 1,
+              "decisive_policy_rule_id": "policy.rule.mana.v1",
+              "rule_trace": [
+                {
+                  "policy_rule_id": "policy.rule.mana.v1",
+                  "criterion_id": "criterion.mana.value.v1",
+                  "criterion_source": {
+                    "model": "candidate_comparison",
+                    "version": "2",
+                    "field_path": "title_index.canonical_facts.mana_value"
+                  },
+                  "prerequisite": {},
+                  "direction": "prefer_lower",
+                  "unknown_behavior": "indeterminate",
+                  "source_provenance": {
+                    "reference": "declaration:policy.rule.mana.v1"
+                  },
+                  "left_fact": {
+                    "fact_status": "known",
+                    "value": 2,
+                    "source_path": "title_index[title_id=1].canonical_facts.mana_value",
+                    "source_evidence": 2
+                  },
+                  "right_fact": {
+                    "fact_status": "known",
+                    "value": 4,
+                    "source_path": "title_index[title_id=2].canonical_facts.mana_value",
+                    "source_evidence": 4
+                  },
+                  "outcome": "left_precedes"
+                }
+              ]
+            },
+            {
+              "need_key": {
+                "zone": "main",
+                "finding_id": "need.lifegain.enabler.v1",
+                "dependency_id": "dependency.lifegain.v1"
+              },
+              "policy_id": "policy.test.v1",
+              "left": {
+                "title_id": 1,
+                "name": "Alpha"
+              },
+              "right": {
+                "title_id": 3,
+                "name": "Gamma"
+              },
+              "status": "precedes",
+              "preceding_title_id": 1,
+              "decisive_policy_rule_id": "policy.rule.mana.v1",
+              "rule_trace": [
+                {
+                  "policy_rule_id": "policy.rule.mana.v1",
+                  "criterion_id": "criterion.mana.value.v1",
+                  "criterion_source": {
+                    "model": "candidate_comparison",
+                    "version": "2",
+                    "field_path": "title_index.canonical_facts.mana_value"
+                  },
+                  "prerequisite": {},
+                  "direction": "prefer_lower",
+                  "unknown_behavior": "indeterminate",
+                  "source_provenance": {
+                    "reference": "declaration:policy.rule.mana.v1"
+                  },
+                  "left_fact": {
+                    "fact_status": "known",
+                    "value": 2,
+                    "source_path": "title_index[title_id=1].canonical_facts.mana_value",
+                    "source_evidence": 2
+                  },
+                  "right_fact": {
+                    "fact_status": "known",
+                    "value": 3,
+                    "source_path": "title_index[title_id=3].canonical_facts.mana_value",
+                    "source_evidence": 3
+                  },
+                  "outcome": "left_precedes"
+                }
+              ]
+            }
+          ],
+          "unresolved_conditions": [],
+          "considered_candidate_count": 3
+        },
+        "source_need": {
+          "zone": "main",
+          "finding_id": "need.lifegain.enabler.v1",
+          "dependency_id": "dependency.lifegain.v1",
+          "dependency_label": "lifegain",
+          "missing_side_name": "enabler",
+          "missing_side": {
+            "relationship": "producer",
+            "acceptable_feature_rule_ids": [
+              "effect.lifegain.v1"
+            ],
+            "matching_semantics": "any",
+            "feature_rule_ids": [
+              "effect.lifegain.v1"
+            ],
+            "copy_count": 0,
+            "cards": []
+          },
+          "required_feature_rule_ids": [
+            "effect.lifegain.v1"
+          ],
+          "feature_matching_semantics": "any",
+          "required_relationship": "producer"
+        },
+        "source_pool_summary": {
+          "canonical_cards_classified": 3,
+          "required_feature_not_matched": 0,
+          "feature_matches": 3,
+          "included": 3,
+          "returned": 3,
+          "excluded": 0,
+          "excluded_reasons": {},
+          "unresolved_reasons": {},
+          "truncated": false
+        },
+        "source_evidence_completeness": {
+          "status": "unknown",
+          "reason": "source_evidence_boundary_not_present_in_candidate_facts_v3",
+          "feature_level_unsupported_remainders": [
+            {
+              "title_id": 3,
+              "rule_id": "effect.lifegain.v1",
+              "unsupported_remainder": [
+                {
+                  "text": "Unmodeled rider.",
+                  "reason": "unsupported_clause"
+                }
+              ]
+            }
+          ]
+        },
+        "pool_context_conditions": [],
+        "returned_candidate_facts": [
+          {
+            "title_id": 1,
+            "name": "Alpha",
+            "eligible_printing_ids": [
+              101
+            ],
+            "known_printings": [
+              {
+                "arena_id": 101,
+                "set_code": "AAA",
+                "collector_number": "1",
+                "rarity": "common"
+              },
+              {
+                "arena_id": 102,
+                "set_code": "BBB",
+                "collector_number": "2",
+                "rarity": "rare"
+              }
+            ],
+            "eligibility_status": "eligible",
+            "eligibility": {
+              "format_legality": {
+                "status": "legal",
+                "format": "Test",
+                "eligible_printing_ids": [
+                  101
+                ],
+                "reason": "validator_backed_format_rules"
+              },
+              "color_identity": {
+                "status": "not_applicable",
+                "allowed_colors": null,
+                "card_color_identity": "W"
+              },
+              "playset": {
+                "status": "capacity_available",
+                "current_deck_copies": 0,
+                "copy_limit": 4,
+                "remaining_capacity": 4
+              },
+              "ownership": {
+                "status": "unknown",
+                "owned_copies": null
+              },
+              "crafting": {
+                "status": "not_evaluated"
+              }
+            },
+            "unresolved_eligibility": [],
+            "matching_feature_evidence": [
+              {
+                "rule_id": "effect.lifegain.v1",
+                "dimension": "theme",
+                "label": "lifegain",
+                "relationship": "producer",
+                "evidence": "You gain 1 life.",
+                "explanation": "Reviewed feature evidence.",
+                "dependency_context": {
+                  "ability_id": "ability.001",
+                  "ability_kind": "spell_effect",
+                  "availability": "unconditional",
+                  "prerequisites": {
+                    "trigger": null,
+                    "costs": [],
+                    "conditions": [],
+                    "qualifiers": []
+                  },
+                  "effect": {
+                    "kind": "gain_life",
+                    "amount": 1
+                  },
+                  "parse_status": "supported",
+                  "unsupported_remainder": []
+                }
+              }
+            ],
+            "required_feature_eligibility": {
+              "status": "matched",
+              "feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matching_semantics": "any",
+              "relationship": "producer"
+            },
+            "support_context": {
+              "matching_semantics": "any",
+              "acceptable_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matched_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "entries": [
+                {
+                  "rule_id": "effect.lifegain.v1",
+                  "relationship": "producer",
+                  "evidence": "You gain 1 life.",
+                  "feature_evidence": {
+                    "rule_id": "effect.lifegain.v1",
+                    "dimension": "theme",
+                    "label": "lifegain",
+                    "relationship": "producer",
+                    "evidence": "You gain 1 life.",
+                    "explanation": "Reviewed feature evidence.",
+                    "dependency_context": {
+                      "ability_id": "ability.001",
+                      "ability_kind": "spell_effect",
+                      "availability": "unconditional",
+                      "prerequisites": {
+                        "trigger": null,
+                        "costs": [],
+                        "conditions": [],
+                        "qualifiers": []
+                      },
+                      "effect": {
+                        "kind": "gain_life",
+                        "amount": 1
+                      },
+                      "parse_status": "supported",
+                      "unsupported_remainder": []
+                    }
+                  },
+                  "dependency_context": {
+                    "ability_id": "ability.001",
+                    "ability_kind": "spell_effect",
+                    "availability": "unconditional",
+                    "prerequisites": {
+                      "trigger": null,
+                      "costs": [],
+                      "conditions": [],
+                      "qualifiers": []
+                    },
+                    "effect": {
+                      "kind": "gain_life",
+                      "amount": 1
+                    },
+                    "parse_status": "supported",
+                    "unsupported_remainder": []
+                  }
+                }
+              ],
+              "unresolved": []
+            },
+            "source_candidate_reference": "need_matrices[need_key=main|need.lifegain.enabler.v1|dependency.lifegain.v1].candidates[title_id=1]",
+            "context_conditions": [
+              {
+                "condition_id": "ownership_unknown",
+                "source_path": "title_index[title_id=1].eligibility.ownership",
+                "evidence": {
+                  "status": "unknown",
+                  "owned_copies": null
+                }
+              }
+            ]
+          },
+          {
+            "title_id": 2,
+            "name": "Beta",
+            "eligible_printing_ids": [],
+            "known_printings": [
+              {
+                "arena_id": 201,
+                "set_code": "AAA",
+                "collector_number": "2",
+                "rarity": "common"
+              }
+            ],
+            "eligibility_status": "eligible",
+            "eligibility": {
+              "format_legality": {
+                "status": "legal",
+                "format": "Test",
+                "eligible_printing_ids": [],
+                "reason": "validator_backed_format_rules"
+              },
+              "color_identity": {
+                "status": "not_applicable",
+                "allowed_colors": null,
+                "card_color_identity": "W"
+              },
+              "playset": {
+                "status": "capacity_available",
+                "current_deck_copies": 0,
+                "copy_limit": 4,
+                "remaining_capacity": 4
+              },
+              "ownership": {
+                "status": "known",
+                "owned_copies": 0
+              },
+              "crafting": {
+                "status": "not_evaluated"
+              }
+            },
+            "unresolved_eligibility": [],
+            "matching_feature_evidence": [
+              {
+                "rule_id": "effect.lifegain.v1",
+                "dimension": "theme",
+                "label": "lifegain",
+                "relationship": "producer",
+                "evidence": "Whenever you cast a spell, you gain 1 life.",
+                "explanation": "Reviewed feature evidence.",
+                "dependency_context": {
+                  "ability_id": "ability.001",
+                  "ability_kind": "triggered",
+                  "availability": "conditional",
+                  "prerequisites": {
+                    "trigger": {
+                      "event": "spell_cast",
+                      "subject": "spell",
+                      "conditions": []
+                    },
+                    "costs": [],
+                    "conditions": [],
+                    "qualifiers": []
+                  },
+                  "effect": {
+                    "kind": "gain_life",
+                    "amount": 1
+                  },
+                  "parse_status": "supported",
+                  "unsupported_remainder": []
+                }
+              }
+            ],
+            "required_feature_eligibility": {
+              "status": "matched",
+              "feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matching_semantics": "any",
+              "relationship": "producer"
+            },
+            "support_context": {
+              "matching_semantics": "any",
+              "acceptable_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matched_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "entries": [
+                {
+                  "rule_id": "effect.lifegain.v1",
+                  "relationship": "producer",
+                  "evidence": "Whenever you cast a spell, you gain 1 life.",
+                  "feature_evidence": {
+                    "rule_id": "effect.lifegain.v1",
+                    "dimension": "theme",
+                    "label": "lifegain",
+                    "relationship": "producer",
+                    "evidence": "Whenever you cast a spell, you gain 1 life.",
+                    "explanation": "Reviewed feature evidence.",
+                    "dependency_context": {
+                      "ability_id": "ability.001",
+                      "ability_kind": "triggered",
+                      "availability": "conditional",
+                      "prerequisites": {
+                        "trigger": {
+                          "event": "spell_cast",
+                          "subject": "spell",
+                          "conditions": []
+                        },
+                        "costs": [],
+                        "conditions": [],
+                        "qualifiers": []
+                      },
+                      "effect": {
+                        "kind": "gain_life",
+                        "amount": 1
+                      },
+                      "parse_status": "supported",
+                      "unsupported_remainder": []
+                    }
+                  },
+                  "dependency_context": {
+                    "ability_id": "ability.001",
+                    "ability_kind": "triggered",
+                    "availability": "conditional",
+                    "prerequisites": {
+                      "trigger": {
+                        "event": "spell_cast",
+                        "subject": "spell",
+                        "conditions": []
+                      },
+                      "costs": [],
+                      "conditions": [],
+                      "qualifiers": []
+                    },
+                    "effect": {
+                      "kind": "gain_life",
+                      "amount": 1
+                    },
+                    "parse_status": "supported",
+                    "unsupported_remainder": []
+                  }
+                }
+              ],
+              "unresolved": []
+            },
+            "source_candidate_reference": "need_matrices[need_key=main|need.lifegain.enabler.v1|dependency.lifegain.v1].candidates[title_id=2]",
+            "context_conditions": [
+              {
+                "condition_id": "ownership_known_zero",
+                "source_path": "title_index[title_id=2].eligibility.ownership",
+                "evidence": {
+                  "status": "known",
+                  "owned_copies": 0
+                }
+              }
+            ]
+          },
+          {
+            "title_id": 3,
+            "name": "Gamma",
+            "eligible_printing_ids": [],
+            "known_printings": [
+              {
+                "arena_id": 301,
+                "set_code": "AAA",
+                "collector_number": "3",
+                "rarity": "common"
+              }
+            ],
+            "eligibility_status": "eligible",
+            "eligibility": {
+              "format_legality": {
+                "status": "legal",
+                "format": "Test",
+                "eligible_printing_ids": [],
+                "reason": "validator_backed_format_rules"
+              },
+              "color_identity": {
+                "status": "not_applicable",
+                "allowed_colors": null,
+                "card_color_identity": "W"
+              },
+              "playset": {
+                "status": "capacity_available",
+                "current_deck_copies": 0,
+                "copy_limit": 4,
+                "remaining_capacity": 4
+              },
+              "ownership": {
+                "status": "known",
+                "owned_copies": 2
+              },
+              "crafting": {
+                "status": "not_evaluated"
+              }
+            },
+            "unresolved_eligibility": [],
+            "matching_feature_evidence": [
+              {
+                "rule_id": "effect.lifegain.v1",
+                "dimension": "theme",
+                "label": "lifegain",
+                "relationship": "producer",
+                "evidence": "You gain 1 life. Unmodeled rider.",
+                "explanation": "Reviewed feature evidence.",
+                "dependency_context": {
+                  "ability_id": "ability.001",
+                  "ability_kind": "triggered",
+                  "availability": "partially_reviewed",
+                  "prerequisites": {
+                    "trigger": {
+                      "event": "spell_cast",
+                      "subject": "spell",
+                      "conditions": []
+                    },
+                    "costs": [],
+                    "conditions": [],
+                    "qualifiers": []
+                  },
+                  "effect": {
+                    "kind": "gain_life",
+                    "amount": 1
+                  },
+                  "parse_status": "partial",
+                  "unsupported_remainder": [
+                    {
+                      "text": "Unmodeled rider.",
+                      "reason": "unsupported_clause"
+                    }
+                  ]
+                }
+              },
+              {
+                "rule_id": "effect.lifegain.v1",
+                "dimension": "theme",
+                "label": "lifegain",
+                "relationship": "producer",
+                "evidence": "{T}: You gain 1 life.",
+                "explanation": "Reviewed feature evidence.",
+                "dependency_context": {
+                  "ability_id": "ability.001",
+                  "ability_kind": "activated",
+                  "availability": "conditional",
+                  "prerequisites": {
+                    "trigger": null,
+                    "costs": [
+                      {
+                        "kind": "tap",
+                        "subject": "self",
+                        "timing": "activated"
+                      }
+                    ],
+                    "conditions": [],
+                    "qualifiers": []
+                  },
+                  "effect": {
+                    "kind": "gain_life",
+                    "amount": 1
+                  },
+                  "parse_status": "supported",
+                  "unsupported_remainder": []
+                }
+              }
+            ],
+            "required_feature_eligibility": {
+              "status": "matched",
+              "feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matching_semantics": "any",
+              "relationship": "producer"
+            },
+            "support_context": {
+              "matching_semantics": "any",
+              "acceptable_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matched_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "entries": [
+                {
+                  "rule_id": "effect.lifegain.v1",
+                  "relationship": "producer",
+                  "evidence": "You gain 1 life. Unmodeled rider.",
+                  "feature_evidence": {
+                    "rule_id": "effect.lifegain.v1",
+                    "dimension": "theme",
+                    "label": "lifegain",
+                    "relationship": "producer",
+                    "evidence": "You gain 1 life. Unmodeled rider.",
+                    "explanation": "Reviewed feature evidence.",
+                    "dependency_context": {
+                      "ability_id": "ability.001",
+                      "ability_kind": "triggered",
+                      "availability": "partially_reviewed",
+                      "prerequisites": {
+                        "trigger": {
+                          "event": "spell_cast",
+                          "subject": "spell",
+                          "conditions": []
+                        },
+                        "costs": [],
+                        "conditions": [],
+                        "qualifiers": []
+                      },
+                      "effect": {
+                        "kind": "gain_life",
+                        "amount": 1
+                      },
+                      "parse_status": "partial",
+                      "unsupported_remainder": [
+                        {
+                          "text": "Unmodeled rider.",
+                          "reason": "unsupported_clause"
+                        }
+                      ]
+                    }
+                  },
+                  "dependency_context": {
+                    "ability_id": "ability.001",
+                    "ability_kind": "triggered",
+                    "availability": "partially_reviewed",
+                    "prerequisites": {
+                      "trigger": {
+                        "event": "spell_cast",
+                        "subject": "spell",
+                        "conditions": []
+                      },
+                      "costs": [],
+                      "conditions": [],
+                      "qualifiers": []
+                    },
+                    "effect": {
+                      "kind": "gain_life",
+                      "amount": 1
+                    },
+                    "parse_status": "partial",
+                    "unsupported_remainder": [
+                      {
+                        "text": "Unmodeled rider.",
+                        "reason": "unsupported_clause"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "rule_id": "effect.lifegain.v1",
+                  "relationship": "producer",
+                  "evidence": "{T}: You gain 1 life.",
+                  "feature_evidence": {
+                    "rule_id": "effect.lifegain.v1",
+                    "dimension": "theme",
+                    "label": "lifegain",
+                    "relationship": "producer",
+                    "evidence": "{T}: You gain 1 life.",
+                    "explanation": "Reviewed feature evidence.",
+                    "dependency_context": {
+                      "ability_id": "ability.001",
+                      "ability_kind": "activated",
+                      "availability": "conditional",
+                      "prerequisites": {
+                        "trigger": null,
+                        "costs": [
+                          {
+                            "kind": "tap",
+                            "subject": "self",
+                            "timing": "activated"
+                          }
+                        ],
+                        "conditions": [],
+                        "qualifiers": []
+                      },
+                      "effect": {
+                        "kind": "gain_life",
+                        "amount": 1
+                      },
+                      "parse_status": "supported",
+                      "unsupported_remainder": []
+                    }
+                  },
+                  "dependency_context": {
+                    "ability_id": "ability.001",
+                    "ability_kind": "activated",
+                    "availability": "conditional",
+                    "prerequisites": {
+                      "trigger": null,
+                      "costs": [
+                        {
+                          "kind": "tap",
+                          "subject": "self",
+                          "timing": "activated"
+                        }
+                      ],
+                      "conditions": [],
+                      "qualifiers": []
+                    },
+                    "effect": {
+                      "kind": "gain_life",
+                      "amount": 1
+                    },
+                    "parse_status": "supported",
+                    "unsupported_remainder": []
+                  }
+                }
+              ],
+              "unresolved": []
+            },
+            "source_candidate_reference": "need_matrices[need_key=main|need.lifegain.enabler.v1|dependency.lifegain.v1].candidates[title_id=3]",
+            "context_conditions": []
+          }
+        ],
+        "source_context": {
+          "analyzed_deck_identity": {
+            "deck_snapshot_identity_version": "1",
+            "digest_algorithm": "sha256",
+            "canonical_payload": {
+              "main": [
+                [
+                  201,
+                  1
+                ]
+              ],
+              "sideboard": [
+                [
+                  301,
+                  1
+                ]
+              ],
+              "commander": []
+            },
+            "digest": "db72cc97290147360c556e370877ced55f926ba8fe15bc2939b6953771206459"
+          },
+          "trigger_finding_type": "support_need",
+          "format_context": "Test",
+          "color_identity_context": null,
+          "ownership_context": "unknown",
+          "ignored_non_trigger_findings": 0,
+          "source_ordering": "casefolded_card_name_then_title_id_non_ranking",
+          "source_limitations": []
+        }
+      },
+      {
+        "need_key": {
+          "zone": "main",
+          "finding_id": "need.spell_cast.enabler.v1",
+          "dependency_id": "dependency.spell_cast.v1"
+        },
+        "decision": {
+          "need_key": {
+            "zone": "main",
+            "finding_id": "need.spell_cast.enabler.v1",
+            "dependency_id": "dependency.spell_cast.v1"
+          },
+          "source_need_reference": "need_matrices[need_key=main|need.spell_cast.enabler.v1|dependency.spell_cast.v1].source_need",
+          "policy_id": "policy.test.v1",
+          "policy_source": {
+            "kind": "explicit_user",
+            "provenance": {
+              "reference": "test declaration"
+            }
+          },
+          "ordering_model_version": "2",
+          "ordering_status": "insufficient_candidates",
+          "outcome": "single_candidate_no_preference",
+          "reason": "single_candidate_no_preference",
+          "candidate": null,
+          "blocked_candidate": null,
+          "ordered_first_group": null,
+          "relation_evidence": [],
+          "unresolved_conditions": [],
+          "considered_candidate_count": 1
+        },
+        "source_need": {
+          "zone": "main",
+          "finding_id": "need.spell_cast.enabler.v1",
+          "dependency_id": "dependency.spell_cast.v1",
+          "dependency_label": "spell_cast",
+          "missing_side_name": "enabler",
+          "missing_side": {
+            "relationship": "enabler",
+            "acceptable_feature_rule_ids": [
+              "type.spells.v1"
+            ],
+            "matching_semantics": "any",
+            "feature_rule_ids": [
+              "type.spells.v1"
+            ],
+            "copy_count": 0,
+            "cards": []
+          },
+          "required_feature_rule_ids": [
+            "type.spells.v1"
+          ],
+          "feature_matching_semantics": "any",
+          "required_relationship": "enabler"
+        },
+        "source_pool_summary": {
+          "canonical_cards_classified": 3,
+          "required_feature_not_matched": 0,
+          "feature_matches": 1,
+          "included": 1,
+          "returned": 1,
+          "excluded": 0,
+          "excluded_reasons": {},
+          "unresolved_reasons": {},
+          "truncated": true
+        },
+        "source_evidence_completeness": {
+          "status": "unknown",
+          "reason": "source_evidence_boundary_not_present_in_candidate_facts_v3",
+          "feature_level_unsupported_remainders": []
+        },
+        "pool_context_conditions": [
+          {
+            "condition_id": "candidate_pool_truncated",
+            "source_path": "need_matrices[need_key=main|need.spell_cast.enabler.v1|dependency.spell_cast.v1].source_pool_summary.truncated",
+            "evidence": true
+          }
+        ],
+        "returned_candidate_facts": [
+          {
+            "title_id": 1,
+            "name": "Alpha",
+            "eligible_printing_ids": [
+              101
+            ],
+            "known_printings": [
+              {
+                "arena_id": 101,
+                "set_code": "AAA",
+                "collector_number": "1",
+                "rarity": "common"
+              },
+              {
+                "arena_id": 102,
+                "set_code": "BBB",
+                "collector_number": "2",
+                "rarity": "rare"
+              }
+            ],
+            "eligibility_status": "eligible",
+            "eligibility": {
+              "format_legality": {
+                "status": "legal",
+                "format": "Test",
+                "eligible_printing_ids": [
+                  101
+                ],
+                "reason": "validator_backed_format_rules"
+              },
+              "color_identity": {
+                "status": "not_applicable",
+                "allowed_colors": null,
+                "card_color_identity": "W"
+              },
+              "playset": {
+                "status": "capacity_available",
+                "current_deck_copies": 0,
+                "copy_limit": 4,
+                "remaining_capacity": 4
+              },
+              "ownership": {
+                "status": "unknown",
+                "owned_copies": null
+              },
+              "crafting": {
+                "status": "not_evaluated"
+              }
+            },
+            "unresolved_eligibility": [],
+            "matching_feature_evidence": [
+              {
+                "rule_id": "type.spells.v1",
+                "dimension": "theme",
+                "label": "spells",
+                "relationship": "enabler",
+                "evidence": "Sorcery",
+                "explanation": "Reviewed feature evidence.",
+                "dependency_context": {
+                  "ability_id": null,
+                  "ability_kind": "card_type",
+                  "availability": "unconditional",
+                  "prerequisites": {
+                    "trigger": null,
+                    "costs": [],
+                    "conditions": [],
+                    "qualifiers": []
+                  },
+                  "effect": null,
+                  "parse_status": "supported",
+                  "unsupported_remainder": []
+                }
+              }
+            ],
+            "required_feature_eligibility": {
+              "status": "matched",
+              "feature_rule_ids": [
+                "type.spells.v1"
+              ],
+              "matching_semantics": "any",
+              "relationship": "enabler"
+            },
+            "support_context": {
+              "matching_semantics": "any",
+              "acceptable_feature_rule_ids": [
+                "type.spells.v1"
+              ],
+              "matched_feature_rule_ids": [
+                "type.spells.v1"
+              ],
+              "entries": [
+                {
+                  "rule_id": "type.spells.v1",
+                  "relationship": "enabler",
+                  "evidence": "Sorcery",
+                  "feature_evidence": {
+                    "rule_id": "type.spells.v1",
+                    "dimension": "theme",
+                    "label": "spells",
+                    "relationship": "enabler",
+                    "evidence": "Sorcery",
+                    "explanation": "Reviewed feature evidence.",
+                    "dependency_context": {
+                      "ability_id": null,
+                      "ability_kind": "card_type",
+                      "availability": "unconditional",
+                      "prerequisites": {
+                        "trigger": null,
+                        "costs": [],
+                        "conditions": [],
+                        "qualifiers": []
+                      },
+                      "effect": null,
+                      "parse_status": "supported",
+                      "unsupported_remainder": []
+                    }
+                  },
+                  "dependency_context": {
+                    "ability_id": null,
+                    "ability_kind": "card_type",
+                    "availability": "unconditional",
+                    "prerequisites": {
+                      "trigger": null,
+                      "costs": [],
+                      "conditions": [],
+                      "qualifiers": []
+                    },
+                    "effect": null,
+                    "parse_status": "supported",
+                    "unsupported_remainder": []
+                  }
+                }
+              ],
+              "unresolved": []
+            },
+            "source_candidate_reference": "need_matrices[need_key=main|need.spell_cast.enabler.v1|dependency.spell_cast.v1].candidates[title_id=1]",
+            "context_conditions": [
+              {
+                "condition_id": "ownership_unknown",
+                "source_path": "title_index[title_id=1].eligibility.ownership",
+                "evidence": {
+                  "status": "unknown",
+                  "owned_copies": null
+                }
+              }
+            ]
+          }
+        ],
+        "source_context": {
+          "analyzed_deck_identity": {
+            "deck_snapshot_identity_version": "1",
+            "digest_algorithm": "sha256",
+            "canonical_payload": {
+              "main": [
+                [
+                  201,
+                  1
+                ]
+              ],
+              "sideboard": [
+                [
+                  301,
+                  1
+                ]
+              ],
+              "commander": []
+            },
+            "digest": "db72cc97290147360c556e370877ced55f926ba8fe15bc2939b6953771206459"
+          },
+          "trigger_finding_type": "support_need",
+          "format_context": "Test",
+          "color_identity_context": null,
+          "ownership_context": "unknown",
+          "ignored_non_trigger_findings": 0,
+          "source_ordering": "casefolded_card_name_then_title_id_non_ranking",
+          "source_limitations": []
+        }
+      },
+      {
+        "need_key": {
+          "zone": "sideboard",
+          "finding_id": "need.lifegain.enabler.v1",
+          "dependency_id": "dependency.lifegain.v1"
+        },
+        "decision": {
+          "need_key": {
+            "zone": "sideboard",
+            "finding_id": "need.lifegain.enabler.v1",
+            "dependency_id": "dependency.lifegain.v1"
+          },
+          "source_need_reference": "need_matrices[need_key=sideboard|need.lifegain.enabler.v1|dependency.lifegain.v1].source_need",
+          "policy_id": "policy.test.v1",
+          "policy_source": {
+            "kind": "explicit_user",
+            "provenance": {
+              "reference": "test declaration"
+            }
+          },
+          "ordering_model_version": "2",
+          "ordering_status": "insufficient_candidates",
+          "outcome": "single_candidate_no_preference",
+          "reason": "single_candidate_no_preference",
+          "candidate": null,
+          "blocked_candidate": null,
+          "ordered_first_group": null,
+          "relation_evidence": [],
+          "unresolved_conditions": [],
+          "considered_candidate_count": 1
+        },
+        "source_need": {
+          "zone": "sideboard",
+          "finding_id": "need.lifegain.enabler.v1",
+          "dependency_id": "dependency.lifegain.v1",
+          "dependency_label": "lifegain",
+          "missing_side_name": "enabler",
+          "missing_side": {
+            "relationship": "producer",
+            "acceptable_feature_rule_ids": [
+              "effect.lifegain.v1"
+            ],
+            "matching_semantics": "any",
+            "feature_rule_ids": [
+              "effect.lifegain.v1"
+            ],
+            "copy_count": 0,
+            "cards": []
+          },
+          "required_feature_rule_ids": [
+            "effect.lifegain.v1"
+          ],
+          "feature_matching_semantics": "any",
+          "required_relationship": "producer"
+        },
+        "source_pool_summary": {
+          "canonical_cards_classified": 3,
+          "required_feature_not_matched": 0,
+          "feature_matches": 1,
+          "included": 1,
+          "returned": 1,
+          "excluded": 0,
+          "excluded_reasons": {},
+          "unresolved_reasons": {},
+          "truncated": false
+        },
+        "source_evidence_completeness": {
+          "status": "unknown",
+          "reason": "source_evidence_boundary_not_present_in_candidate_facts_v3",
+          "feature_level_unsupported_remainders": []
+        },
+        "pool_context_conditions": [],
+        "returned_candidate_facts": [
+          {
+            "title_id": 1,
+            "name": "Alpha",
+            "eligible_printing_ids": [
+              101
+            ],
+            "known_printings": [
+              {
+                "arena_id": 101,
+                "set_code": "AAA",
+                "collector_number": "1",
+                "rarity": "common"
+              },
+              {
+                "arena_id": 102,
+                "set_code": "BBB",
+                "collector_number": "2",
+                "rarity": "rare"
+              }
+            ],
+            "eligibility_status": "eligible",
+            "eligibility": {
+              "format_legality": {
+                "status": "legal",
+                "format": "Test",
+                "eligible_printing_ids": [
+                  101
+                ],
+                "reason": "validator_backed_format_rules"
+              },
+              "color_identity": {
+                "status": "not_applicable",
+                "allowed_colors": null,
+                "card_color_identity": "W"
+              },
+              "playset": {
+                "status": "capacity_available",
+                "current_deck_copies": 0,
+                "copy_limit": 4,
+                "remaining_capacity": 4
+              },
+              "ownership": {
+                "status": "unknown",
+                "owned_copies": null
+              },
+              "crafting": {
+                "status": "not_evaluated"
+              }
+            },
+            "unresolved_eligibility": [],
+            "matching_feature_evidence": [
+              {
+                "rule_id": "effect.lifegain.v1",
+                "dimension": "theme",
+                "label": "lifegain",
+                "relationship": "producer",
+                "evidence": "You gain 1 life.",
+                "explanation": "Reviewed feature evidence.",
+                "dependency_context": {
+                  "ability_id": "ability.001",
+                  "ability_kind": "spell_effect",
+                  "availability": "unconditional",
+                  "prerequisites": {
+                    "trigger": null,
+                    "costs": [],
+                    "conditions": [],
+                    "qualifiers": []
+                  },
+                  "effect": {
+                    "kind": "gain_life",
+                    "amount": 1
+                  },
+                  "parse_status": "supported",
+                  "unsupported_remainder": []
+                }
+              }
+            ],
+            "required_feature_eligibility": {
+              "status": "matched",
+              "feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matching_semantics": "any",
+              "relationship": "producer"
+            },
+            "support_context": {
+              "matching_semantics": "any",
+              "acceptable_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "matched_feature_rule_ids": [
+                "effect.lifegain.v1"
+              ],
+              "entries": [
+                {
+                  "rule_id": "effect.lifegain.v1",
+                  "relationship": "producer",
+                  "evidence": "You gain 1 life.",
+                  "feature_evidence": {
+                    "rule_id": "effect.lifegain.v1",
+                    "dimension": "theme",
+                    "label": "lifegain",
+                    "relationship": "producer",
+                    "evidence": "You gain 1 life.",
+                    "explanation": "Reviewed feature evidence.",
+                    "dependency_context": {
+                      "ability_id": "ability.001",
+                      "ability_kind": "spell_effect",
+                      "availability": "unconditional",
+                      "prerequisites": {
+                        "trigger": null,
+                        "costs": [],
+                        "conditions": [],
+                        "qualifiers": []
+                      },
+                      "effect": {
+                        "kind": "gain_life",
+                        "amount": 1
+                      },
+                      "parse_status": "supported",
+                      "unsupported_remainder": []
+                    }
+                  },
+                  "dependency_context": {
+                    "ability_id": "ability.001",
+                    "ability_kind": "spell_effect",
+                    "availability": "unconditional",
+                    "prerequisites": {
+                      "trigger": null,
+                      "costs": [],
+                      "conditions": [],
+                      "qualifiers": []
+                    },
+                    "effect": {
+                      "kind": "gain_life",
+                      "amount": 1
+                    },
+                    "parse_status": "supported",
+                    "unsupported_remainder": []
+                  }
+                }
+              ],
+              "unresolved": []
+            },
+            "source_candidate_reference": "need_matrices[need_key=sideboard|need.lifegain.enabler.v1|dependency.lifegain.v1].candidates[title_id=1]",
+            "context_conditions": [
+              {
+                "condition_id": "ownership_unknown",
+                "source_path": "title_index[title_id=1].eligibility.ownership",
+                "evidence": {
+                  "status": "unknown",
+                  "owned_copies": null
+                }
+              }
+            ]
+          }
+        ],
+        "source_context": {
+          "analyzed_deck_identity": {
+            "deck_snapshot_identity_version": "1",
+            "digest_algorithm": "sha256",
+            "canonical_payload": {
+              "main": [
+                [
+                  201,
+                  1
+                ]
+              ],
+              "sideboard": [
+                [
+                  301,
+                  1
+                ]
+              ],
+              "commander": []
+            },
+            "digest": "db72cc97290147360c556e370877ced55f926ba8fe15bc2939b6953771206459"
+          },
+          "trigger_finding_type": "support_need",
+          "format_context": "Test",
+          "color_identity_context": null,
+          "ownership_context": "unknown",
+          "ignored_non_trigger_findings": 0,
+          "source_ordering": "casefolded_card_name_then_title_id_non_ranking",
+          "source_limitations": []
+        }
+      }
+    ],
+    "limitations": [
+      "A positive decision applies only to the returned candidate pool.",
+      "Truncation is preserved and does not establish exhaustive coverage.",
+      "Context conditions are descriptive and do not select an action.",
+      "No printing, quantity, removal, crafting, deck change, or legality is selected."
+    ]
+  },
+  "policy": {
+    "proposal_policy_model_version": "2",
+    "required_recommendation_context_model_version": "2",
+    "policy_id": "proposal.test.v1",
+    "policy_source": {
+      "kind": "explicit_user",
+      "provenance": {
+        "reference": "test declaration"
+      }
+    },
+    "need_key": {
+      "zone": "main",
+      "finding_id": "need.lifegain.enabler.v1",
+      "dependency_id": "dependency.lifegain.v1"
+    },
+    "recommendation_requirement": "recommendable",
+    "candidate_pool_requirement": "complete_only",
+    "eligibility_requirement": "resolved",
+    "printing_requirement": "single_eligible_printing",
+    "operation": "add_only",
+    "quantity": 1,
+    "target_zone": "main",
+    "resource_mode": "unlimited",
+    "limitations": [
+      "The declaration applies to exactly one explicitly named structured need.",
+      "Only a positive, untruncated, resolved recommendation with one eligible printing may proceed.",
+      "The target zone is explicitly declared, not inferred from the source need.",
+      "A future builder must check the immutable baseline Deck and validate any concrete proposal.",
+      "No printing choice, Deck construction, validation, crafting, removal, or mutation occurs here."
+    ]
+  }
+}

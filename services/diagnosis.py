@@ -31,7 +31,7 @@ def normalize_analysis(analysis: dict) -> dict:
     adds a Deck identity that diagnosis does not use.
     """
     version = analysis.get("analysis_version")
-    if version not in {"1", "2", "3", "4"}:
+    if version not in {"1", "2", "3", "4", "5"}:
         raise ValueError("unsupported deck analysis version")
     return {
         "analysis_version": "1",

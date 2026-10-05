@@ -195,15 +195,15 @@ def build_candidate_ordering(candidate_comparison: dict, strategic_fit: dict,
     """Order only same-need candidates under a validated explicit policy."""
     if not isinstance(candidate_comparison, dict) or not isinstance(strategic_fit, dict):
         raise ValueError("complete comparison and strategic fit models are required")
-    if candidate_comparison.get("candidate_comparison_model_version") != "2":
-        raise ValueError("Candidate Comparison Model Version 2 is required")
-    if strategic_fit.get("strategic_fit_model_version") != "2":
-        raise ValueError("Strategic Fit Model Version 2 is required")
+    if candidate_comparison.get("candidate_comparison_model_version") != "3":
+        raise ValueError("Candidate Comparison Model Version 3 is required")
+    if strategic_fit.get("strategic_fit_model_version") != "3":
+        raise ValueError("Strategic Fit Model Version 3 is required")
     if strategic_fit != build_strategic_fit_signals(candidate_comparison):
         raise ValueError("strategic fit contradicts candidate comparison")
     if not isinstance(preference_policy, dict) or (
         preference_policy.get("strategic_preference_policy_model_version") != "2"
-        or preference_policy.get("preference_rule_registry_version") != "2"
+        or preference_policy.get("preference_rule_registry_version") != "3"
     ):
         raise ValueError("Strategic Preference Policy Model Version 2 is required")
     policy_fields = ("policy_id", "policy_source", "scope", "eligibility_handling",
@@ -259,8 +259,8 @@ def build_candidate_ordering(candidate_comparison: dict, strategic_fit: dict,
         })
     return {
         "candidate_ordering_model_version": CANDIDATE_ORDERING_MODEL_VERSION,
-        "source_candidate_comparison_model_version": "2",
-        "source_strategic_fit_model_version": "2",
+        "source_candidate_comparison_model_version": "3",
+        "source_strategic_fit_model_version": "3",
         "source_strategic_preference_policy_model_version": "2",
         "policy_id": policy["policy_id"],
         "policy_source": deepcopy(policy["policy_source"]),

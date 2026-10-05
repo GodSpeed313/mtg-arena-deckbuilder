@@ -10,6 +10,7 @@ from mtgadb.model import Card, Deck
 from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.query import CardQueryEngine
 from services.abilities import Ability, decompose_abilities
+from services.evidence_scope import context_from_ability, structural_context, normalize
 from services.dependencies import (
     DEPENDENCY_MODEL_VERSION,
     INTERACTION_FAMILIES,
@@ -21,7 +22,7 @@ from services.packages import (
     FUNCTIONAL_PACKAGES, PACKAGE_MODEL_VERSION, functional_package_contributions,
 )
 
-VERSION = "4"
+VERSION = "5"
 ROLES = ("removal", "card_draw", "card_selection", "ramp", "mana_fixing",
          "counterspell", "protection", "recursion", "threat")
 THEMES = ("tokens", "counters", "lifegain", "sacrifice", "graveyard", "typal", "spells",
@@ -120,34 +121,7 @@ def _project_ability_features(
     projected = []
 
     def context(ability, effect=None):
-        prerequisites = {
-            "trigger": asdict(ability.trigger) if ability.trigger else None,
-            "costs": [asdict(cost) for cost in ability.costs],
-            "conditions": [asdict(item) for item in (
-                effect.conditions if effect is not None else ()
-            )],
-            "qualifiers": [asdict(item) for item in (
-                *ability.qualifiers,
-                *(effect.qualifiers if effect is not None else ()),
-            )],
-        }
-        availability = (
-            "partially_reviewed"
-            if ability.unsupported_remainder
-            else "unconditional" if not any(prerequisites.values())
-            else "conditional"
-        )
-        return {
-            "ability_id": ability.ability_id,
-            "ability_kind": ability.kind,
-            "availability": availability,
-            "prerequisites": prerequisites,
-            "effect": asdict(effect) if effect is not None else None,
-            "parse_status": ability.parse_status,
-            "unsupported_remainder": [
-                asdict(item) for item in ability.unsupported_remainder
-            ],
-        }
+        return context_from_ability(ability, effect)
 
     def feature(
         rule_id, dimension, label, relationship, evidence, explanation,
@@ -422,17 +396,7 @@ def classify_card(card: Card) -> dict:
     if types & {"Instant", "Sorcery"}:
         add("type.spells.v1", "theme", "spells", "enabler", card.types,
             "Casting this instant/sorcery can enable a matching cast trigger.",
-            {
-                "ability_id": None,
-                "ability_kind": "card_type",
-                "availability": "unconditional",
-                "prerequisites": {
-                    "trigger": None, "costs": [], "conditions": [], "qualifiers": [],
-                },
-                "effect": None,
-                "parse_status": "supported",
-                "unsupported_remainder": [],
-            })
+            structural_context(types))
     cannot_attack = any(
         line.casefold() == "defender"
         or line.casefold() == "this creature can't attack."
@@ -523,7 +487,7 @@ def classify_card(card: Card) -> dict:
                 unsupported_text=sorted(set(unsupported)),
                 text_status="anomalous" if anomalous else "no_text" if not card.rules_text else
                             "unsupported" if unsupported else "supported",
-                abilities=[asdict(ability) for ability in abilities],
+                abilities=[normalize(asdict(ability)) for ability in abilities],
                 ability_coverage=_ability_coverage(abilities),
                 unclassified_dimensions=[dim for dim in ("role", "theme")
                                          if not any(f["dimension"] == dim for f in features)])

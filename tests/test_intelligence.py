@@ -617,9 +617,9 @@ class ClassificationTests(unittest.TestCase):
             {
                 "interaction.token_draw.v1",
                 "interaction.spell_draw.v1",
-                "interaction.token_sacrifice.v1",
             },
         )
+        self.assertTrue(any(feature["dependency_context"]["origin"]["unsupported_remainder"] for feature in agency["features"] if feature["rule_id"] == "cost.sacrifice_draw.v1"))
 
     def test_structural_and_meaningful_ability_coverage_are_distinct(self):
         unknown_token = classify_card(card("Create a mysterious token.", types="Sorcery"))
@@ -757,7 +757,7 @@ class AnalysisTests(unittest.TestCase):
     def test_analysis_v4_includes_identity_abilities_and_copy_weighted_coverage(self):
         deck = Deck(main={101: 2, 301: 4})
         result = analyze_deck(deck, self.con)
-        self.assertEqual(result["analysis_version"], "4")
+        self.assertEqual(result["analysis_version"], "5")
         self.assertEqual(result["analyzed_deck_identity"], build_deck_snapshot_identity(deck))
         cards = result["zones"]["main"]["cards"]
         self.assertTrue(all("abilities" in row and "ability_coverage" in row for row in cards))

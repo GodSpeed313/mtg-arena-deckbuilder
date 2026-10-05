@@ -14,11 +14,11 @@ from mtgadb import canonical
 from mtgadb.model import Card, CardPrinting, Deck, Format
 from services import deck_review as review
 from services.deck_review_report import project, render_json, render_text, findings
-from services.proposal_presentation import require_proposal_presentation
+from services.proposal_presentation import require_proposal_presentation_v2
 from services.validator import DeckRules
 import workbench
 
-FIXTURE = Path(__file__).parent / "fixtures" / "deck_review_v1.json"
+FIXTURE = Path(__file__).parent / "fixtures" / "deck_review_6r.json"
 
 
 class DeckReviewTests(unittest.TestCase):
@@ -75,7 +75,7 @@ class DeckReviewTests(unittest.TestCase):
         self.assertEqual(self.outcomes(report), ["recommendable"])
         self.assertEqual(self.reason(report), "validated")
         presentation = report["artifacts"]["presentation"]
-        self.assertEqual(require_proposal_presentation(presentation), presentation)
+        self.assertEqual(require_proposal_presentation_v2(presentation), presentation)
         proposed = report["artifacts"]["proposal_result_projection"]["proposal"]
         self.assertEqual(proposed["delta"]["arena_id"], 201)
         self.assertEqual(proposed["proposed_deck"]["report_type"], "Deck")
@@ -265,7 +265,7 @@ class DeckReviewTests(unittest.TestCase):
         self.assertNotIn("analysis", report["artifacts"])
 
     def test_presentation_verifier_called_and_failure_withheld(self):
-        with patch.object(review, "require_proposal_presentation", side_effect=ValueError("bad identity")) as verify:
+        with patch.object(review, "require_proposal_presentation_v2", side_effect=ValueError("bad identity")) as verify:
             report = self.run_review()
         verify.assert_called_once()
         self.assertNotIn("presentation", report["artifacts"])
@@ -276,9 +276,9 @@ class DeckReviewTests(unittest.TestCase):
         names = {"analyze_deck": "analysis", "diagnose_analysis": "diagnosis", "discover_candidates": "candidates",
                  "derive_candidate_facts": "candidate_facts", "build_candidate_comparisons": "comparison",
                  "build_strategic_fit_signals": "strategic_fit", "build_preference_policy": "preference_policy",
-                 "build_proposal_policy": "proposal_policy", "build_candidate_ordering": "ordering",
+                 "build_proposal_policy_v3": "proposal_policy", "build_candidate_ordering": "ordering",
                  "build_recommendation_decisions": "recommendation", "build_recommendation_context": "recommendation_context",
-                 "build_proposal": "proposal_result_projection", "require_proposal_presentation": "presentation"}
+                 "build_scoped_proposal": "proposal_result_projection", "require_proposal_presentation_v2": "presentation"}
         with ExitStack() as stack:
             for function, artifact in names.items():
                 original = getattr(review, function)

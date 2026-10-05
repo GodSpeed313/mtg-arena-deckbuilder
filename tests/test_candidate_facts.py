@@ -93,6 +93,7 @@ class CandidateFactsTests(unittest.TestCase):
     ) -> tuple[dict, dict]:
         deck = deck or self.multi_need_deck()
         analysis = analyze_deck(deck, self.con)
+        self.source_analysis = analysis
         pools = discover_candidates(
             analysis,
             deck,
@@ -112,12 +113,12 @@ class CandidateFactsTests(unittest.TestCase):
 
     def test_version_input_contract_and_deterministic_output(self):
         _, pools = self.candidates()
-        first = derive_candidate_facts(pools, self.con)
-        second = derive_candidate_facts(pools, self.con)
-        self.assertEqual(CANDIDATE_FACTS_MODEL_VERSION, "3")
+        first = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
+        second = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
+        self.assertEqual(CANDIDATE_FACTS_MODEL_VERSION, "4")
         self.assertEqual(first, second)
-        self.assertEqual(first["candidate_facts_model_version"], "3")
-        self.assertEqual(first["source_candidate_model_version"], "3")
+        self.assertEqual(first["candidate_facts_model_version"], "4")
+        self.assertEqual(first["source_candidate_model_version"], "4")
         self.assertEqual(first["functional_package_model_version"], "1")
         self.assertEqual(
             first["source_context"]["analyzed_deck_identity"],
@@ -130,16 +131,16 @@ class CandidateFactsTests(unittest.TestCase):
         wrong = deepcopy(pools)
         wrong["candidate_model_version"] = "1"
         with self.assertRaises(ValueError):
-            derive_candidate_facts(wrong, self.con)
+            derive_candidate_facts(wrong, self.con, source_analysis=self.source_analysis)
 
         future_trigger = deepcopy(pools)
         future_trigger["trigger_finding_type"] = "future_finding"
         with self.assertRaises(ValueError):
-            derive_candidate_facts(future_trigger, self.con)
+            derive_candidate_facts(future_trigger, self.con, source_analysis=self.source_analysis)
 
     def test_identity_canonical_fields_features_and_package_evidence(self):
         _, pools = self.candidates()
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         vital = self.title(result, 2)
         self.assertEqual(vital["title_id"], 2)
         self.assertEqual(vital["name"], "Vital Study")
@@ -175,10 +176,10 @@ class CandidateFactsTests(unittest.TestCase):
 
     def test_source_provenance_and_exact_need_match_are_preserved(self):
         _, pools = self.candidates()
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         life_pool = next(
             pool for pool in result["per_need"]
-            if pool["source_need"]["dependency_label"] == "lifegain"
+            if pool["source_need"]["dependency_id"].split(".")[1] == "lifegain"
         )
         vital = next(card for card in life_pool["candidates"] if card["title_id"] == 2)
         source = vital["source_need"]
@@ -186,8 +187,8 @@ class CandidateFactsTests(unittest.TestCase):
         self.assertEqual(source["dependency_id"], "dependency.lifegain.v1")
         self.assertEqual(source["zone"], "main")
         self.assertEqual(source["missing_side_name"], "enabler")
-        self.assertEqual(source["required_feature_rule_ids"], ["effect.lifegain.v1"])
-        self.assertEqual(source["required_relationship"], "producer")
+        self.assertEqual(source["missing_side"]["acceptable_feature_rule_ids"], ["effect.lifegain.v1"])
+        self.assertEqual(source["missing_side"]["relationship"], "producer")
         self.assertEqual(
             [(feature["rule_id"], feature["relationship"])
              for feature in vital["matching_feature_evidence"]],
@@ -196,7 +197,7 @@ class CandidateFactsTests(unittest.TestCase):
 
     def test_optional_support_does_not_create_candidate_fact_occurrence(self):
         _, pools = self.candidates()
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         token = self.title(result, 5)
         self.assertEqual(token["matched_need_ids"], [
             "need.creature_token_entry.enabler.v2",
@@ -206,7 +207,7 @@ class CandidateFactsTests(unittest.TestCase):
         ])
         self.assertEqual(len(token["per_need_matches"]), 1)
         self.assertEqual(
-            {match["source_need"]["dependency_label"]
+            {match["source_need"]["dependency_id"].split(".")[1]
              for match in token["per_need_matches"]},
             {"creature_token_entry"},
         )
@@ -219,14 +220,14 @@ class CandidateFactsTests(unittest.TestCase):
     def test_per_need_evidence_may_differ_without_contradicting_shared_facts(self):
         deck = Deck(main={101: 1, 801: 1})
         _, pools = self.candidates(deck)
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         vital = self.title(result, 2)
         self.assertEqual(vital["matched_need_ids"], [
             "need.lifegain.enabler.v1",
             "need.spell_cast.enabler.v1",
         ])
         evidence_by_dependency = {
-            match["source_need"]["dependency_label"]: {
+            match["source_need"]["dependency_id"].split(".")[1]: {
                 feature["rule_id"] for feature in match["matching_feature_evidence"]
             }
             for match in vital["per_need_matches"]
@@ -239,7 +240,7 @@ class CandidateFactsTests(unittest.TestCase):
 
     def test_printings_rarity_and_neutral_ordering(self):
         _, pools = self.candidates()
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         titles = result["candidate_facts_by_title"]
         self.assertEqual(
             [(item["name"].casefold(), item["title_id"]) for item in titles],
@@ -257,7 +258,7 @@ class CandidateFactsTests(unittest.TestCase):
 
     def test_eligibility_ownership_copy_and_crafting_are_carried_forward(self):
         _, pools = self.candidates(collection=Collection())
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         source_vital = next(
             candidate
             for pool in pools["pools"]
@@ -290,7 +291,7 @@ class CandidateFactsTests(unittest.TestCase):
         self.assertEqual(vital["eligibility"]["crafting"], {"status": "not_evaluated"})
 
         _, unknown_pools = self.candidates()
-        unknown = self.title(derive_candidate_facts(unknown_pools, self.con), 2)
+        unknown = self.title(derive_candidate_facts(unknown_pools, self.con, source_analysis=self.source_analysis), 2)
         self.assertEqual(unknown["eligibility"]["ownership"], {
             "status": "unknown", "owned_copies": None,
         })
@@ -300,13 +301,13 @@ class CandidateFactsTests(unittest.TestCase):
         _, pools = self.candidates(deck, limit_per_need=1)
         source_pool = next(
             pool for pool in pools["pools"]
-            if pool["source_need"]["dependency_label"] == "lifegain"
+            if pool["source_need"]["dependency_id"].split(".")[1] == "lifegain"
         )
         self.assertTrue(source_pool["summary"]["truncated"])
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         fact_pool = next(
             pool for pool in result["per_need"]
-            if pool["source_need"]["dependency_label"] == "lifegain"
+            if pool["source_need"]["dependency_id"].split(".")[1] == "lifegain"
         )
         self.assertEqual(fact_pool["source_pool_summary"], source_pool["summary"])
         self.assertTrue(fact_pool["source_pool_summary"]["truncated"])
@@ -320,7 +321,7 @@ class CandidateFactsTests(unittest.TestCase):
             for candidate in pool["candidates"]
         }
         with patch("services.candidate_facts.classify_card", wraps=classify_card) as mocked:
-            result = derive_candidate_facts(pools, self.con)
+            result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         self.assertEqual(mocked.call_count, len(returned_ids))
         self.assertEqual(
             {item["title_id"] for item in result["candidate_facts_by_title"]},
@@ -329,7 +330,7 @@ class CandidateFactsTests(unittest.TestCase):
 
     def test_unsupported_text_does_not_create_candidate_capabilities(self):
         _, pools = self.candidates()
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         self.assertNotIn(6, {
             item["title_id"] for item in result["candidate_facts_by_title"]
         })
@@ -355,14 +356,14 @@ class CandidateFactsTests(unittest.TestCase):
         deck_before = deepcopy(deck)
         database_before = tuple(self.con.iterdump())
         diagnosis_before = diagnose_analysis(analysis)
-        derive_candidate_facts(pools, self.con)
+        derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         self.assertEqual(analysis, analysis_before)
         self.assertEqual(pools, pools_before)
         self.assertEqual(deck, deck_before)
         self.assertEqual(tuple(self.con.iterdump()), database_before)
         self.assertEqual(diagnose_analysis(analysis), diagnosis_before)
-        self.assertEqual(analysis["needs_model_version"], "2")
-        self.assertEqual(analysis["dependency_model_version"], "2")
+        self.assertEqual(analysis["needs_model_version"], "3")
+        self.assertEqual(analysis["dependency_model_version"], "3")
         self.assertEqual(analysis["functional_package_model_version"], "1")
 
     def test_contradictory_duplicate_candidate_facts_fail_closed(self):
@@ -378,11 +379,11 @@ class CandidateFactsTests(unittest.TestCase):
             "status": "known", "owned_copies": 0,
         }
         with self.assertRaises(ValueError):
-            derive_candidate_facts(pools, self.con)
+            derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
 
     def test_output_has_no_strategic_fields(self):
         _, pools = self.candidates()
-        result = derive_candidate_facts(pools, self.con)
+        result = derive_candidate_facts(pools, self.con, source_analysis=self.source_analysis)
         forbidden = {
             "rank", "ranking", "score", "tier", "recommendation", "replacement",
             "best", "preferred", "efficiency", "quality", "power_score",

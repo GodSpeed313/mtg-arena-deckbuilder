@@ -44,7 +44,7 @@ def finding(rows: list[dict], label: str) -> dict:
 
 class DependencyModelTests(unittest.TestCase):
     def test_registry_version_ids_and_shared_interaction_definitions_are_stable(self):
-        self.assertEqual(DEPENDENCY_MODEL_VERSION, "2")
+        self.assertEqual(DEPENDENCY_MODEL_VERSION, "3")
         self.assertIsInstance(DEPENDENCIES, tuple)
         self.assertEqual(
             [item.dependency_id for item in DEPENDENCIES],
@@ -221,8 +221,8 @@ class DependencyAnalysisTests(unittest.TestCase):
             sideboard={301: 2},
             commander={401: 1},
         ), self.con)
-        self.assertEqual(result["analysis_version"], "4")
-        self.assertEqual(result["dependency_model_version"], "2")
+        self.assertEqual(result["analysis_version"], "5")
+        self.assertEqual(result["dependency_model_version"], "3")
         self.assertEqual(
             next(item for item in result["zones"]["main"]["dependencies"]
                  if item["label"] == "lifegain")["state"],

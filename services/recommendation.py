@@ -83,7 +83,7 @@ def _validate_trace(pair: dict) -> None:
         expected_locator = ("field_path" if source.get("model") == "candidate_comparison"
                             else "signal_id")
         if (source.get("model") not in {"candidate_comparison", "strategic_fit"}
-            or source.get("version") != "2"
+            or source.get("version") != "3"
             or set(source) != {"model", "version", expected_locator}
             or not isinstance(source[expected_locator], str)
             or not source[expected_locator]):
@@ -334,7 +334,7 @@ def build_recommendation_decisions(ordering: dict) -> dict:
     for field in ("source_candidate_comparison_model_version",
                   "source_strategic_fit_model_version",
                   "source_strategic_preference_policy_model_version"):
-        if ordering.get(field) != "2":
+        if ordering.get(field) != ("2" if field == "source_strategic_preference_policy_model_version" else "3"):
             raise ValueError("ordering source model versions are unsupported")
     policy_id = ordering.get("policy_id")
     if not isinstance(policy_id, str) or not policy_id:
@@ -369,8 +369,8 @@ def build_recommendation_decisions(ordering: dict) -> dict:
     return {
         "recommendation_decision_model_version": RECOMMENDATION_DECISION_MODEL_VERSION,
         "source_candidate_ordering_model_version": _ORDERING_VERSION,
-        "source_candidate_comparison_model_version": "2",
-        "source_strategic_fit_model_version": "2",
+        "source_candidate_comparison_model_version": "3",
+        "source_strategic_fit_model_version": "3",
         "source_strategic_preference_policy_model_version": "2",
         "policy_id": policy_id,
         "decisions": decisions,

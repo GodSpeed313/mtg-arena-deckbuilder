@@ -152,6 +152,8 @@ def render_text(report):
             lines.append(f"{zone} packages: {json.dumps(data['functional_package_counts'], sort_keys=True)}")
             for dependency in data["dependencies"]:
                 lines.append(f"{zone} dependency: {dependency['dependency_id']} - {dependency['state']}")
+                if dependency["state"] == "support_scope_unestablished":
+                    lines.append("  Recognized routes remain, but their originating support scope is unestablished.")
             for need in data["needs"]:
                 lines.append(f"{zone} need: {need['finding_id']} ({need['finding_type']}) - {need['explanation']}")
             for card in data["cards"]:
@@ -167,6 +169,8 @@ def render_text(report):
             lines.append(f"Explicit {name}: {json.dumps(artifacts[name], sort_keys=True, ensure_ascii=False)}")
     for pool in artifacts.get("candidates", {}).get("pools", []):
         lines.append(f"Pool {pool['source_need']['zone']}/{pool['source_need']['finding_id']}: {json.dumps(pool['summary'], sort_keys=True)}")
+        lines.append("  Source scope: reviewed features only; empty reviewed sides do not establish actual absence. " +
+                     json.dumps(pool["source_need"]["evidence_boundary"], sort_keys=True))
         for candidate in pool["candidates"]:
             lines.append(f"  {candidate['name']} [title {candidate['title_id']}]: {candidate['eligibility_status']}; eligible printings {candidate['eligibility']['format_legality']['eligible_printing_ids']}")
     for item in report["findings"]:

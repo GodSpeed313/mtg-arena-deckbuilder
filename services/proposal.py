@@ -9,7 +9,7 @@ from typing import Any
 from mtgadb.model import Deck, Format
 from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snapshot_identity
 from mtgadb.modes import OperatingMode
-from services.proposal_policy import build_proposal_policy
+from services.proposal_policy import build_proposal_policy, build_proposal_policy_v3
 from services.validator import DeckRules, ValidationReport, validate_deck
 
 
@@ -87,7 +87,7 @@ def _validation_evidence(report: ValidationReport) -> dict:
     }
 
 
-def build_proposal(
+def _build_proposal(
     recommendation_context: dict,
     proposal_policy: dict,
     baseline_deck: Deck,
@@ -95,6 +95,9 @@ def build_proposal(
     *,
     format: Format,
     rules: DeckRules,
+    policy_version: str,
+    policy_builder,
+    context_versions: dict,
 ) -> dict:
     """Instantiate one #6G delta and accept it only after one validator call."""
     if not isinstance(proposal_policy, dict):
@@ -107,11 +110,11 @@ def build_proposal(
         value = proposal_policy.get(field)
         if type(value) is not type(expected) or value != expected:
             return _result("rejected", reason, {"field": field, "value": value})
-    if (proposal_policy.get("proposal_policy_model_version") != "2"
-        or proposal_policy.get("required_recommendation_context_model_version") != "2"):
+    if (proposal_policy.get("proposal_policy_model_version") != policy_version
+        or proposal_policy.get("required_recommendation_context_model_version") != context_versions["recommendation_context_model_version"]):
         return _result("rejected", "malformed_input", "unsupported proposal policy version")
     try:
-        normalized = build_proposal_policy({field: proposal_policy[field]
+        normalized = policy_builder({field: proposal_policy[field]
                                             for field in _POLICY_FIELDS})
     except (KeyError, ValueError, TypeError) as exc:
         return _result("rejected", "malformed_input", str(exc))
@@ -120,7 +123,7 @@ def build_proposal(
 
     if not isinstance(recommendation_context, dict) or any(
         recommendation_context.get(field) != version
-        for field, version in _CONTEXT_VERSIONS.items()
+        for field, version in context_versions.items()
     ):
         return _result("rejected", "malformed_input", "unsupported recommendation context version",
                        policy=normalized)
@@ -357,3 +360,38 @@ def build_proposal(
     return _result("accepted", "validated", None, policy=normalized, source=row,
                    proposal={"delta": delta, "proposed_deck": proposed},
                    validation=validation, validation_inputs=validation_inputs)
+
+
+_SCOPED_CONTEXT_VERSIONS = {**_CONTEXT_VERSIONS, "recommendation_context_model_version": "3", "source_strategic_fit_model_version": "3", "source_candidate_comparison_model_version": "3", "source_candidate_facts_model_version": "4", "source_candidate_model_version": "4"}
+
+
+def build_proposal(recommendation_context: dict, proposal_policy: dict,
+                   baseline_deck: Deck, con: sqlite3.Connection, *,
+                   format: Format, rules: DeckRules) -> dict:
+    """Legacy add-one producer: only Policy 2 / Context 2."""
+    return _build_proposal(recommendation_context, proposal_policy, baseline_deck, con,
+                           format=format, rules=rules, policy_version="2",
+                           policy_builder=build_proposal_policy,
+                           context_versions=_CONTEXT_VERSIONS)
+
+
+def build_scoped_proposal(recommendation_context: dict, proposal_policy: dict,
+                          baseline_deck: Deck, con: sqlite3.Connection, *,
+                          format: Format, rules: DeckRules) -> dict:
+    """Read-only scoped add-one producer: only Policy 3 / Context 3."""
+    from services.evidence_scope import require_captured_evidence
+    if isinstance(recommendation_context, dict) and recommendation_context.get("recommendation_context_model_version") == "3":
+        try:
+            for row in recommendation_context["contexts"]:
+                if _key({key: row["source_need"][key] for key in ("zone", "finding_id", "dependency_id")}) != _key(row["need_key"]):
+                    raise ValueError("scope contradicts recommendation key")
+                for candidate in row["returned_candidate_facts"]:
+                    require_captured_evidence(row["source_need"], candidate["matching_feature_evidence"],
+                                              candidate["support_context"], row["source_evidence_completeness"],
+                                              recommendation_context["analyzed_deck_identity"])
+        except (KeyError, TypeError, ValueError) as exc:
+            return _result("rejected", "malformed_input", str(exc))
+    return _build_proposal(recommendation_context, proposal_policy, baseline_deck, con,
+                           format=format, rules=rules, policy_version="3",
+                           policy_builder=build_proposal_policy_v3,
+                           context_versions=_SCOPED_CONTEXT_VERSIONS)

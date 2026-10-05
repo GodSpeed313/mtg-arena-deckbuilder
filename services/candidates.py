@@ -15,10 +15,11 @@ from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snap
 from mtgadb.model import Collection, Deck
 from mtgadb.query import CardQueryEngine
 from services.intelligence import classify_card
+from services.evidence_scope import source_need, retrieval
 from services.validator import card_copy_limit
 
 
-CANDIDATE_MODEL_VERSION = "3"
+CANDIDATE_MODEL_VERSION = "4"
 
 
 def _output(
@@ -98,6 +99,7 @@ def _source_needs(analysis: dict) -> tuple[list[dict], int]:
                 "unused_support_opportunity",
                 "optional_support_observation",
                 "conditional_support_observation",
+                "unestablished_support_observation",
             }:
                 ignored += 1
                 continue
@@ -120,18 +122,7 @@ def _source_needs(analysis: dict) -> tuple[list[dict], int]:
                 or not relationship
             ):
                 raise ValueError("support need is missing reviewed feature requirements")
-            rule_ids = tuple(raw_rule_ids)
-            sources.append({
-                "zone": zone_name,
-                "finding_id": finding["finding_id"],
-                "dependency_id": finding["dependency_id"],
-                "dependency_label": finding["dependency_label"],
-                "missing_side_name": "enabler",
-                "missing_side": deepcopy(missing),
-                "required_feature_rule_ids": list(rule_ids),
-                "feature_matching_semantics": "any",
-                "required_relationship": relationship,
-            })
+            sources.append(source_need(analysis, zone_name, finding))
     return sources, ignored
 
 
@@ -146,8 +137,8 @@ def discover_candidates(
     limit_per_need: int | None = None,
 ) -> dict:
     """Return neutral per-need candidate pools without mutating inputs or data."""
-    if analysis.get("analysis_version") != "4" or analysis.get("needs_model_version") != "2":
-        raise ValueError("candidate discovery requires analysis version 4 and needs version 2")
+    if (analysis.get("analysis_version"), analysis.get("dependency_model_version"), analysis.get("needs_model_version")) != ("5", "3", "3"):
+        raise ValueError("candidate discovery requires Analysis 5 / Dependencies 3 / Needs 3")
     analyzed_deck_identity = require_deck_snapshot_identity(
         analysis.get("analyzed_deck_identity")
     )
@@ -186,8 +177,8 @@ def discover_candidates(
 
     pools = []
     for source in sources:
-        required_ids = set(source["required_feature_rule_ids"])
-        relationship = source["required_relationship"]
+        required_ids = set(retrieval(source)["feature_rule_ids"])
+        relationship = retrieval(source)["relationship"]
         matches = []
         for card in cards:
             evidence = [
@@ -306,8 +297,8 @@ def discover_candidates(
                 "eligibility": {
                     "required_feature": {
                         "status": "matched",
-                        "feature_rule_ids": source["required_feature_rule_ids"],
-                        "matching_semantics": source["feature_matching_semantics"],
+                        "feature_rule_ids": retrieval(source)["feature_rule_ids"],
+                        "matching_semantics": retrieval(source)["matching_semantics"],
                         "relationship": relationship,
                     },
                     "format_legality": format_fact,

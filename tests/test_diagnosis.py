@@ -18,6 +18,9 @@ from workbench import main
 
 
 def entry(title_id, quantity, *, text="", types="", cmc=1, power=""):
+    # Threshold controls need a reviewed origin on creature token makers.
+    if types == "Creature" and text.startswith("Create a 1/1 white Soldier creature token."):
+        text = "{T}: " + text
     result = classify_card(Card(
         title_id, f"Synthetic {title_id}", cmc=cmc, types=types,
         power=power, rules_text=text,
@@ -436,7 +439,13 @@ class DiagnosisTests(unittest.TestCase):
         for expected, deck in decks.items():
             with self.subTest(plan=expected):
                 report = diagnose_analysis(analyze_deck(deck, con))
-                self.assertEqual(report["analysis_version"], "4")
+                self.assertEqual(report["analysis_version"], "5")
+                if expected == "token_sacrifice":
+                    # Coroner's partial origin cannot establish its interaction.
+                    self.assertEqual(report["status"], "insufficient_evidence")
+                    self.assertFalse(any(row["rule_id"] == "interaction.token_sacrifice.v1"
+                                         for row in analyze_deck(deck, con)["interactions"]))
+                    continue
                 self.assertEqual(report["status"], "diagnosed")
                 self.assertEqual(report["plan"]["probable_plan"], expected)
 

@@ -1,0 +1,731 @@
+[
+  {
+    "series": [
+      "real_deck_corpus",
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 1111496,
+    "name": "Professor Dellian Fel",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 3 life.",
+    "canonical_types": "Planeswalker",
+    "canonical_rules_text": "You gain 3 life.\nYou draw a card and lose 1 life.\nDestroy target creature.\nYou get an emblem with \"Whenever you gain life, target opponent loses that much life.\"",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.001",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.001.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 3 life.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "real_deck_corpus"
+    ],
+    "title_id": 927759,
+    "name": "Summon: Knights of Round",
+    "rule_id": "effect.token.v1",
+    "dimension": "theme",
+    "label": "tokens",
+    "relationship": "producer",
+    "feature_evidence": "Create three 2/2 white Knight creature tokens.",
+    "canonical_types": "Enchantment Creature",
+    "canonical_rules_text": "Create three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nUltimate End — Other creatures you control get +2/+2 until end of turn. Put an indestructible counter on each of them.\nIndestructible",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.001",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.001.effect.001",
+        "kind": "create_creature_token",
+        "evidence": "Create three 2/2 white Knight creature tokens.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": {
+          "quantity": 3,
+          "kind": "creature",
+          "power": 2,
+          "toughness": 2,
+          "colors": [
+            "white"
+          ],
+          "subtypes": [
+            "Knight"
+          ],
+          "artifact": false,
+          "name": null,
+          "keywords": []
+        },
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "real_deck_corpus"
+    ],
+    "title_id": 927759,
+    "name": "Summon: Knights of Round",
+    "rule_id": "effect.token.v1",
+    "dimension": "theme",
+    "label": "tokens",
+    "relationship": "producer",
+    "feature_evidence": "Create three 2/2 white Knight creature tokens.",
+    "canonical_types": "Enchantment Creature",
+    "canonical_rules_text": "Create three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nUltimate End — Other creatures you control get +2/+2 until end of turn. Put an indestructible counter on each of them.\nIndestructible",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.002",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.002.effect.001",
+        "kind": "create_creature_token",
+        "evidence": "Create three 2/2 white Knight creature tokens.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": {
+          "quantity": 3,
+          "kind": "creature",
+          "power": 2,
+          "toughness": 2,
+          "colors": [
+            "white"
+          ],
+          "subtypes": [
+            "Knight"
+          ],
+          "artifact": false,
+          "name": null,
+          "keywords": []
+        },
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "real_deck_corpus"
+    ],
+    "title_id": 927759,
+    "name": "Summon: Knights of Round",
+    "rule_id": "effect.token.v1",
+    "dimension": "theme",
+    "label": "tokens",
+    "relationship": "producer",
+    "feature_evidence": "Create three 2/2 white Knight creature tokens.",
+    "canonical_types": "Enchantment Creature",
+    "canonical_rules_text": "Create three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nUltimate End — Other creatures you control get +2/+2 until end of turn. Put an indestructible counter on each of them.\nIndestructible",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.003",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.003.effect.001",
+        "kind": "create_creature_token",
+        "evidence": "Create three 2/2 white Knight creature tokens.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": {
+          "quantity": 3,
+          "kind": "creature",
+          "power": 2,
+          "toughness": 2,
+          "colors": [
+            "white"
+          ],
+          "subtypes": [
+            "Knight"
+          ],
+          "artifact": false,
+          "name": null,
+          "keywords": []
+        },
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "real_deck_corpus"
+    ],
+    "title_id": 927759,
+    "name": "Summon: Knights of Round",
+    "rule_id": "effect.token.v1",
+    "dimension": "theme",
+    "label": "tokens",
+    "relationship": "producer",
+    "feature_evidence": "Create three 2/2 white Knight creature tokens.",
+    "canonical_types": "Enchantment Creature",
+    "canonical_rules_text": "Create three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nCreate three 2/2 white Knight creature tokens.\nUltimate End — Other creatures you control get +2/+2 until end of turn. Put an indestructible counter on each of them.\nIndestructible",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.004",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.004.effect.001",
+        "kind": "create_creature_token",
+        "evidence": "Create three 2/2 white Knight creature tokens.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": {
+          "quantity": 3,
+          "kind": "creature",
+          "power": 2,
+          "toughness": 2,
+          "colors": [
+            "white"
+          ],
+          "subtypes": [
+            "Knight"
+          ],
+          "artifact": false,
+          "name": null,
+          "keywords": []
+        },
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "real_deck_corpus"
+    ],
+    "title_id": 926700,
+    "name": "Elspeth, Storm Slayer",
+    "rule_id": "effect.token.v1",
+    "dimension": "theme",
+    "label": "tokens",
+    "relationship": "producer",
+    "feature_evidence": "Create a 1/1 white Soldier creature token.",
+    "canonical_types": "Planeswalker",
+    "canonical_rules_text": "If one or more tokens would be created under your control, twice that many of those tokens are created instead.\nCreate a 1/1 white Soldier creature token.\nPut a +1/+1 counter on each creature you control. Those creatures gain flying until your next turn.\nDestroy target creature an opponent controls with mana value 3 or greater.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.002",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.002.effect.001",
+        "kind": "create_creature_token",
+        "evidence": "Create a 1/1 white Soldier creature token.",
+        "amount": 1,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": {
+          "quantity": 1,
+          "kind": "creature",
+          "power": 1,
+          "toughness": 1,
+          "colors": [
+            "white"
+          ],
+          "subtypes": [
+            "Soldier"
+          ],
+          "artifact": false,
+          "name": null,
+          "keywords": []
+        },
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 44611,
+    "name": "Ajani, Mentor of Heroes",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 100 life.",
+    "canonical_types": "Planeswalker",
+    "canonical_rules_text": "Distribute three +1/+1 counters among one, two, or three target creatures you control.\nLook at the top four cards of your library. You may reveal an Aura, creature, or planeswalker card from among them and put it into your hand. Put the rest on the bottom of your library in any order.\nYou gain 100 life.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.003",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.003.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 100 life.",
+        "amount": 100,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 336766,
+    "name": "Ajani, the Greathearted",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 3 life.",
+    "canonical_types": "Planeswalker",
+    "canonical_rules_text": "Creatures you control have vigilance.\nYou gain 3 life.\nPut a +1/+1 counter on each creature you control and a loyalty counter on each other planeswalker you control.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.002",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.002.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 3 life.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 557938,
+    "name": "Azusa's Many Journeys",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 3 life.",
+    "canonical_types": "Enchantment",
+    "canonical_rules_text": "You may play an additional land this turn.\nYou gain 3 life.\nExile this Saga, then return it to the battlefield transformed under your control.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.002",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.002.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 3 life.",
+        "amount": 3,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 279992,
+    "name": "Dovin, Grand Arbiter",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 1 life.",
+    "canonical_types": "Planeswalker",
+    "canonical_rules_text": "Until end of turn, whenever a creature you control deals combat damage to a player, put a loyalty counter on Dovin.\nCreate a 1/1 colorless Thopter artifact creature token with flying. You gain 1 life.\nLook at the top ten cards of your library. Put three of them into your hand and the rest on the bottom of your library in a random order.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.002",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.002.effect.002",
+        "kind": "gain_life",
+        "evidence": "You gain 1 life.",
+        "amount": 1,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 419676,
+    "name": "Elspeth, Sun's Nemesis",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 5 life.",
+    "canonical_types": "Planeswalker",
+    "canonical_rules_text": "Up to two target creatures you control each get +2/+1 until end of turn.\nCreate two 1/1 white Human Soldier creature tokens.\nYou gain 5 life.\nEscape—{4}{W}{W}, Exile four other cards from your graveyard.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.003",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.003.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 5 life.",
+        "amount": 5,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 557328,
+    "name": "Era of Enlightenment",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 2 life.",
+    "canonical_types": "Enchantment",
+    "canonical_rules_text": "Scry 2.\nYou gain 2 life.\nExile this Saga, then return it to the battlefield transformed under your control.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.002",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.002.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 2 life.",
+        "amount": 2,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 419646,
+    "name": "The Birth of Meletis",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 2 life.",
+    "canonical_types": "Enchantment",
+    "canonical_rules_text": "Search your library for a basic Plains card, reveal it, put it into your hand, then shuffle.\nCreate a 0/4 colorless Wall artifact creature token with defender.\nYou gain 2 life.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.003",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.003.effect.001",
+        "kind": "gain_life",
+        "evidence": "You gain 2 life.",
+        "amount": 2,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  },
+  {
+    "series": [
+      "catalog_lifegain_matches"
+    ],
+    "title_id": 477793,
+    "name": "The Raven's Warning",
+    "rule_id": "effect.lifegain.v1",
+    "dimension": "theme",
+    "label": "lifegain",
+    "relationship": "producer",
+    "feature_evidence": "You gain 2 life.",
+    "canonical_types": "Enchantment",
+    "canonical_rules_text": "Create a 1/1 blue Bird creature token with flying. You gain 2 life.\nWhenever one or more creatures you control with flying deal combat damage to a player this turn, look at that player's hand and draw a card.\nYou may put a card you own from outside the game on top of your library.",
+    "source_clause_supported": true,
+    "rubric": "literal clause plus manual subject/effect review; no full-card or strategic correctness claim",
+    "dependency_context": {
+      "ability_id": "ability.001",
+      "ability_kind": "unsupported",
+      "availability": "unconditional",
+      "prerequisites": {
+        "trigger": null,
+        "costs": [],
+        "conditions": [],
+        "qualifiers": []
+      },
+      "effect": {
+        "effect_id": "ability.001.effect.002",
+        "kind": "gain_life",
+        "evidence": "You gain 2 life.",
+        "amount": 2,
+        "target": null,
+        "counter_type": null,
+        "source": null,
+        "controller": "you",
+        "friendly": true,
+        "origin_zone": null,
+        "destination_zone": null,
+        "token": null,
+        "conditions": [],
+        "qualifiers": []
+      },
+      "parse_status": "supported",
+      "unsupported_remainder": []
+    },
+    "context_adjudication": "unwarranted_unconditional_from_unsupported_kind",
+    "oracle_fidelity": "not_exhaustively_verified"
+  }
+]

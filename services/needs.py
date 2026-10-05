@@ -9,7 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 
-NEEDS_MODEL_VERSION = "2"
+NEEDS_MODEL_VERSION = "3"
 
 
 def _finding_version(dependency: dict) -> str:
@@ -59,6 +59,11 @@ def needs_findings(
                 f"Reviewed {dependency['label']} support exists in this zone, but its "
                 "reviewed producer has a trigger, cost, condition, or qualifier."
             )
+        elif state == "support_scope_unestablished":
+            finding_type = "unestablished_support_observation"
+            identifier = f"observation.{dependency['label']}.support_scope_unestablished.v1"
+            existing_name, missing_name = "payoff", "enabler"
+            explanation = "Recognized compatible routes retain unestablished originating context; no availability or missing-support claim is established."
         else:
             raise ValueError("unsupported dependency state")
 

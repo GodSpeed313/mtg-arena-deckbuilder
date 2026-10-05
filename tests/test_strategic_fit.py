@@ -10,6 +10,12 @@ from services.strategic_fit import (
     build_strategic_fit_signals,
 )
 from tests.test_candidate_comparison import candidate_facts
+from tests.test_candidate_comparison import add_pool
+from services.evidence_scope import source_need, context_view
+from services.intelligence import analyze_deck, classify_card
+from mtgadb import canonical
+from mtgadb.model import Card, CardPrinting, Deck
+import sqlite3
 
 
 EXPECTED_SIGNAL_IDS = (
@@ -28,6 +34,7 @@ EXPECTED_SIGNAL_IDS = (
     "fit.support.activated.v1",
     "fit.support.partial.v1",
     "fit.support.unsupported_remainder_present.v1",
+    "fit.support.origin_unestablished.v1",
     "fit.support.alternative_rule_paths.v1",
     "fit.eligibility.unresolved_dimensions_present.v1",
     "fit.eligibility.no_unresolved_dimensions.v1",
@@ -36,7 +43,7 @@ EXPECTED_SIGNAL_IDS = (
     "fit.copy.remaining_capacity_positive.v1",
     "fit.copy.unlimited.v1",
     "fit.source.pool_truncated.v1",
-    "fit.evidence.zone_boundary_unavailable.v1",
+    "fit.evidence.reviewed_scope_present.v1",
 )
 
 
@@ -97,19 +104,25 @@ def set_title_eligibility(facts, title_id, *, unresolved=None, playset=None):
 
 
 def add_alternative_rule_path(facts):
-    pool = facts["per_need"][0]
-    alternatives = ["effect.lifegain.v1", "type.spells.v1"]
-    pool["source_need"]["required_feature_rule_ids"] = alternatives
-    pool["source_need"]["missing_side"]["acceptable_feature_rule_ids"] = alternatives
-    pool["source_need"]["missing_side"]["feature_rule_ids"] = alternatives
-    for candidate in pool["candidates"]:
-        candidate["source_need"] = deepcopy(pool["source_need"])
-        candidate["eligibility"]["required_feature"]["feature_rule_ids"] = alternatives
-    for title in facts["candidate_facts_by_title"]:
-        for match in title["per_need_matches"]:
-            source = match["source_need"]
-            if source["zone"] == "main" and source["finding_id"] == "need.lifegain.enabler.v1":
-                match["source_need"] = deepcopy(pool["source_need"])
+    with sqlite3.connect(":memory:") as con:
+        con.row_factory = sqlite3.Row
+        con.executescript(canonical.SCHEMA)
+        canonical.load_cards(con, [Card(2, "Listener", types="Enchantment", rules_text="Whenever one or more tokens you control enter, draw a card.")])
+        canonical.load_printings(con, [CardPrinting(201, 2, "AAA", "2", "common")])
+        analysis = analyze_deck(Deck(main={201: 1}, sideboard={301: 1}), con)
+    finding = next(item for item in analysis["zones"]["main"]["needs"] if item["finding_type"] == "support_need")
+    source = source_need(analysis, "main", finding)
+    evidence = next(item for item in classify_card(Card(1, "Alpha", types="Sorcery", rules_text="Create a 1/1 white Soldier creature token."))["features"] if item["rule_id"] == "effect.token.v1")
+    alpha = facts["candidate_facts_by_title"][0]
+    alpha["reviewed_features"].append(evidence)
+    for pool in facts["per_need"]:
+        for row in pool["candidates"]:
+            if row["title_id"] == 1:
+                row["reviewed_features"] = deepcopy(alpha["reviewed_features"])
+    add_pool(facts, source, [(alpha, [evidence])])
+    alpha["matched_need_ids"] = sorted(set(alpha["matched_need_ids"]))
+    alpha["matched_dependency_ids"] = sorted(set(alpha["matched_dependency_ids"]))
+    return source
 
 
 def make_same_packages(facts):
@@ -129,9 +142,9 @@ def make_same_packages(facts):
 class StrategicFitTests(unittest.TestCase):
     def test_versions_shape_and_complete_registry_triggers(self):
         base = fit()
-        self.assertEqual(STRATEGIC_FIT_MODEL_VERSION, "2")
-        self.assertEqual(STRATEGIC_SIGNAL_REGISTRY_VERSION, "1")
-        self.assertEqual(base["source_candidate_comparison_model_version"], "2")
+        self.assertEqual(STRATEGIC_FIT_MODEL_VERSION, "3")
+        self.assertEqual(STRATEGIC_SIGNAL_REGISTRY_VERSION, "2")
+        self.assertEqual(base["source_candidate_comparison_model_version"], "3")
 
         facts = candidate_facts()
         add_alternative_rule_path(facts)
@@ -226,28 +239,28 @@ class StrategicFitTests(unittest.TestCase):
             self.assertIn(signal_id, gamma_ids)
         prerequisite = next(item for item in gamma["signals"]
                             if item["signal_id"] == "fit.support.prerequisites_present.v1")
-        contexts = [entry["dependency_context"]
+        contexts = [context_view(entry["dependency_context"])
                     for entry in prerequisite["evidence"][0]["value"]]
         self.assertTrue(any(context["prerequisites"]["costs"] for context in contexts))
         self.assertTrue(any(context["prerequisites"]["trigger"] for context in contexts))
         unsupported = next(item for item in gamma["signals"]
                            if item["signal_id"] == "fit.support.unsupported_remainder_present.v1")
         self.assertEqual(
-            unsupported["evidence"][0]["value"][0]["dependency_context"]["unsupported_remainder"],
-            [{"text": "Unmodeled rider.", "reason": "unsupported_clause"}],
+            unsupported["evidence"][0]["value"][0]["dependency_context"]["origin"]["unsupported_remainder"],
+            [{"text": "Unmodeled rider.", "scope": "effect", "reason": "unsupported_clause"}],
         )
 
     def test_alternative_paths_describe_accepted_rules_not_all_matches(self):
         facts = candidate_facts()
         add_alternative_rule_path(facts)
         result = fit(build_candidate_comparisons(facts))
-        alpha = candidate_row(result, 1)
+        alpha = candidate_row(result, 1, finding="need.creature_token_entry.enabler.v2")
         signal = next(item for item in alpha["signals"]
                       if item["signal_id"] == "fit.support.alternative_rule_paths.v1")
         evidence = signal["evidence"][0]["value"]
         self.assertEqual(evidence["matching_semantics"], "any")
         self.assertEqual(len(evidence["acceptable_feature_rule_ids"]), 2)
-        self.assertEqual(evidence["matched_feature_rule_ids"], ["effect.lifegain.v1"])
+        self.assertEqual(evidence["matched_feature_rule_ids"], ["effect.token.v1"])
         self.assertNotIn("fit.support.alternative_rule_paths.v1", ids(candidate_row(fit(), 1)))
 
     def test_title_eligibility_ownership_and_capacity_signals(self):
@@ -301,7 +314,7 @@ class StrategicFitTests(unittest.TestCase):
             {item["signal_id"] for item in spell["pool_signals"]},
             {
                 "fit.source.pool_truncated.v1",
-                "fit.evidence.zone_boundary_unavailable.v1",
+                "fit.evidence.reviewed_scope_present.v1",
             },
         )
         self.assertTrue(all(item["scope"] == "need_pool" for item in spell["pool_signals"]))
@@ -313,7 +326,7 @@ class StrategicFitTests(unittest.TestCase):
         life = need_set(result)
         self.assertNotIn("fit.source.pool_truncated.v1",
                          [item["signal_id"] for item in life["pool_signals"]])
-        self.assertIn("fit.evidence.zone_boundary_unavailable.v1",
+        self.assertIn("fit.evidence.reviewed_scope_present.v1",
                       [item["signal_id"] for item in life["pool_signals"]])
 
     def test_input_reordering_is_deterministic_and_input_unchanged(self):

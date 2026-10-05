@@ -69,9 +69,9 @@ class PreferencePolicyTests(unittest.TestCase):
     def test_versions_empty_ruleset_and_no_implicit_default(self):
         result = build_preference_policy(policy())
         self.assertEqual(STRATEGIC_PREFERENCE_POLICY_MODEL_VERSION, "2")
-        self.assertEqual(PREFERENCE_RULE_REGISTRY_VERSION, "2")
+        self.assertEqual(PREFERENCE_RULE_REGISTRY_VERSION, "3")
         self.assertEqual(result["strategic_preference_policy_model_version"], "2")
-        self.assertEqual(result["preference_rule_registry_version"], "2")
+        self.assertEqual(result["preference_rule_registry_version"], "3")
         self.assertEqual(result["rules"], [])
         self.assertIn("no strategic preference", " ".join(result["limitations"]).casefold())
 
@@ -97,7 +97,7 @@ class PreferencePolicyTests(unittest.TestCase):
         self.assertEqual(len(CRITERIA), len(PREFERENCE_CRITERIA))
         self.assertTrue(all(
             item.source_model in {"candidate_comparison", "strategic_fit"}
-            and item.source_version == "2"
+            and item.source_version == "3"
             and item.allowed_directions
             for item in PREFERENCE_CRITERIA
         ))

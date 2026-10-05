@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from services.evidence_scope import context_view
 
-DEPENDENCY_MODEL_VERSION = "2"
+DEPENDENCY_MODEL_VERSION = "3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,24 +116,10 @@ def _context(feature: dict) -> dict | None:
 
 def _reviewed_context(feature: dict) -> dict | None:
     """Return structurally valid classifier context, otherwise fail closed."""
-    context = _context(feature)
-    if context is None:
+    try:
+        return context_view(feature.get("dependency_context"))
+    except (ValueError, TypeError, KeyError):
         return None
-    prerequisites = context.get("prerequisites")
-    if (
-        context.get("availability")
-        not in {"unconditional", "conditional", "partially_reviewed"}
-        or context.get("parse_status") not in {"supported", "partial"}
-        or not isinstance(context.get("unsupported_remainder"), list)
-        or not isinstance(prerequisites, dict)
-        or prerequisites.get("trigger") is not None
-        and not isinstance(prerequisites.get("trigger"), dict)
-        or not isinstance(prerequisites.get("costs"), list)
-        or not isinstance(prerequisites.get("conditions"), list)
-        or not isinstance(prerequisites.get("qualifiers"), list)
-    ):
-        return None
-    return context
 
 
 def _context_matches_rule(feature: dict, context: dict, *, payoff: bool) -> bool:
@@ -262,8 +249,8 @@ def _pairs(cards: list[dict], definition: DependencyDefinition) -> list[dict]:
                         "payoff_title_id": payoff_card["title_id"],
                         "support": (
                             "unconditional"
-                            if enabler_context["availability"] == "unconditional"
-                            else "conditional"
+                            if enabler_context["availability"] == "unconditional" and _reviewed_context(payoff_feature)["establishment"] == "established"
+                            else "conditional" if enabler_context["establishment"] == "established" and _reviewed_context(payoff_feature)["establishment"] == "established" else "unestablished"
                         ),
                         "enabler_evidence": enabler_feature,
                         "payoff_evidence": payoff_feature,
@@ -298,7 +285,7 @@ def dependency_findings(cards: list[dict]) -> list[dict]:
         pairs = _pairs(cards, definition)
         if pairs:
             state = ("supported" if any(pair["support"] == "unconditional" for pair in pairs)
-                     else "conditionally_supported")
+                     else "conditionally_supported" if any(pair["support"] == "conditional" for pair in pairs) else "support_scope_unestablished")
         elif payoff["cards"]:
             state = ("optional_support_absent" if definition.policy == "optional_support"
                      else "payoff_without_enabler" if not enabler["cards"]
@@ -323,7 +310,7 @@ def interaction_findings(cards: list[dict]) -> list[dict]:
     for family in INTERACTION_FAMILIES:
         definition = definitions[family.family_id]
         for pair in _pairs(cards, definition):
-            if pair["enabler_title_id"] == pair["payoff_title_id"]:
+            if pair["support"] == "unestablished" or pair["enabler_title_id"] == pair["payoff_title_id"]:
                 continue
             result.append({"rule_id": family.family_id,
                            "source_title_id": pair["enabler_title_id"],

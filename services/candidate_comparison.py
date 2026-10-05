@@ -1,4 +1,4 @@
-"""Deterministic comparison facts derived only from Candidate Facts Version 3.
+"""Deterministic comparison facts derived only from Candidate Facts Version 4.
 
 The normalized model stores title facts once and need-specific evidence per
 candidate occurrence. Pairwise projections are generated only when requested.
@@ -6,15 +6,17 @@ No candidates, eligibility facts, needs, or card semantics are rediscovered.
 """
 from __future__ import annotations
 
+from services.evidence_scope import require_source_need, retrieval, require_context, context_view, assessment, normalize, encoded, feature_sort_key, validate_feature_context
+
 from collections import Counter, defaultdict
 from copy import deepcopy
 from typing import Any, Callable
 
 from mtgadb.deck_identity import require_deck_snapshot_identity
 
-CANDIDATE_COMPARISON_MODEL_VERSION = "2"
-_CANDIDATE_FACTS_VERSION = "3"
-_CANDIDATE_VERSION = "3"
+CANDIDATE_COMPARISON_MODEL_VERSION = "3"
+_CANDIDATE_FACTS_VERSION = "4"
+_CANDIDATE_VERSION = "4"
 _PACKAGE_VERSION = "1"
 _ZONE_ORDER = {"main": 0, "sideboard": 1, "commander": 2}
 _FACT_STATES = frozenset({"known", "unknown", "not_applicable"})
@@ -62,88 +64,35 @@ def _title_sort_key(item: dict) -> tuple[str, int]:
     return (item["name"].casefold(), item["title_id"])
 
 
-def _feature_sort_key(feature: dict) -> tuple[str, str, str]:
-    return (
-        str(feature.get("rule_id", "")),
-        str(feature.get("relationship", "")),
-        str(feature.get("evidence", "")),
-    )
+def _feature_sort_key(feature):
+    return feature_sort_key(feature)
 
 
 def _validate_source_need(value: Any) -> dict:
-    source = _mapping(value, "source need")
-    _need_key(source)
-    required = (
-        "dependency_label", "missing_side_name", "missing_side",
-        "required_feature_rule_ids", "feature_matching_semantics",
-        "required_relationship",
-    )
-    if any(key not in source for key in required):
-        raise ValueError("source need is missing required provenance")
-    if source["missing_side_name"] != "enabler":
-        raise ValueError("comparison requires a missing enabler side")
-    rule_ids = source["required_feature_rule_ids"]
-    if (
-        not isinstance(rule_ids, list)
-        or not rule_ids
-        or any(not isinstance(rule_id, str) or not rule_id for rule_id in rule_ids)
-        or len(rule_ids) != len(set(rule_ids))
-        or source["feature_matching_semantics"] != "any"
-        or not isinstance(source["required_relationship"], str)
-        or not source["required_relationship"]
-    ):
-        raise ValueError("source need has malformed feature requirements")
-    missing = _mapping(source["missing_side"], "missing side")
-    if (
-        missing.get("acceptable_feature_rule_ids") != rule_ids
-        or missing.get("feature_rule_ids") != rule_ids
-        or missing.get("matching_semantics") != "any"
-        or missing.get("relationship") != source["required_relationship"]
-    ):
-        raise ValueError("source need feature requirements are contradictory")
-    return source
+    return require_source_need(value)
 
 
 def _validate_dependency_context(value: Any) -> dict:
-    context = _mapping(value, "dependency context")
-    prerequisites = _mapping(context.get("prerequisites"), "dependency prerequisites")
-    trigger = prerequisites.get("trigger")
-    if trigger is not None and not isinstance(trigger, dict):
-        raise ValueError("dependency trigger must be an object or null")
-    for key in ("costs", "conditions", "qualifiers"):
-        _list(prerequisites.get(key), f"dependency prerequisite {key}")
-    if context.get("availability") not in {
-        "unconditional", "conditional", "partially_reviewed",
-    }:
-        raise ValueError("dependency availability is malformed")
-    if context.get("parse_status") not in {"supported", "partial"}:
-        raise ValueError("dependency parse status is malformed")
-    _list(context.get("unsupported_remainder"), "unsupported remainder")
-    if context.get("effect") is not None and not isinstance(context.get("effect"), dict):
-        raise ValueError("dependency effect must be an object or null")
-    ability_kind = context.get("ability_kind")
-    if ability_kind is not None and not isinstance(ability_kind, str):
-        raise ValueError("dependency ability kind is malformed")
-    return context
+    return require_context(value)
 
 
 def _validate_matching_evidence(value: Any, source: dict, reviewed: list) -> list[dict]:
     evidence = _list(value, "matching feature evidence")
     if not evidence:
         raise ValueError("candidate requires matching feature evidence")
-    required_ids = set(source["required_feature_rule_ids"])
-    relationship = source["required_relationship"]
+    required_ids = set(retrieval(source)["feature_rule_ids"])
+    relationship = retrieval(source)["relationship"]
     result = []
     for raw_feature in evidence:
         feature = _mapping(raw_feature, "matching feature")
         if (
             feature.get("rule_id") not in required_ids
             or feature.get("relationship") != relationship
-            or feature not in reviewed
+            or not any(encoded(feature) == encoded(item) for item in reviewed)
         ):
             raise ValueError("matching evidence contradicts source requirements")
-        _validate_dependency_context(feature.get("dependency_context"))
-        result.append(deepcopy(feature))
+        validate_feature_context(feature)
+        result.append(normalize(feature))
     return sorted(result, key=_feature_sort_key)
 
 
@@ -286,13 +235,13 @@ def _support_values(field: str) -> Callable[[dict, dict], dict]:
     def extract(title: dict, occurrence: dict) -> dict:
         entries = occurrence["support_context"]["entries"]
         if field == "prerequisites":
-            values = [entry["dependency_context"]["prerequisites"] for entry in entries]
+            values = [context_view(entry["dependency_context"])["prerequisites"] for entry in entries]
         elif field == "alternative_rule_ids":
             values = occurrence["support_context"]["acceptable_feature_rule_ids"]
         elif field == "unsupported_remainder":
-            values = [entry["dependency_context"]["unsupported_remainder"] for entry in entries]
+            values = [context_view(entry["dependency_context"])["unsupported_remainder"] for entry in entries]
         else:
-            values = [entry["dependency_context"].get(field) for entry in entries]
+            values = [context_view(entry["dependency_context"]).get(field) for entry in entries]
         return _cell(
             title["title_id"], "known", values,
             f"per_need.matching_feature_evidence.dependency_context.{field}",
@@ -336,13 +285,14 @@ def _support_context(evidence: list[dict], source: dict) -> dict:
             "evidence": feature.get("evidence"),
             "feature_evidence": deepcopy(feature),
             "dependency_context": deepcopy(context),
+            "assessment": assessment(context),
         })
     return {
-        "matching_semantics": source["feature_matching_semantics"],
-        "acceptable_feature_rule_ids": deepcopy(source["required_feature_rule_ids"]),
+        "matching_semantics": retrieval(source)["matching_semantics"],
+        "acceptable_feature_rule_ids": deepcopy(retrieval(source)["feature_rule_ids"]),
         "matched_feature_rule_ids": sorted({entry["rule_id"] for entry in entries}),
         "entries": entries,
-        "unresolved": [],
+        "unresolved": [{"route_index": index, "reasons": entry["assessment"]["reasons"]} for index, entry in enumerate(entries) if entry["assessment"]["establishment"] == "unestablished"],
     }
 
 
@@ -373,9 +323,9 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
     """Build normalized, non-evaluative comparison facts without database access."""
     source = _mapping(candidate_facts, "candidate facts")
     if source.get("candidate_facts_model_version") != _CANDIDATE_FACTS_VERSION:
-        raise ValueError("candidate comparisons require Candidate Facts Model Version 3")
+        raise ValueError("candidate comparisons require Candidate Facts Model Version 4")
     if source.get("source_candidate_model_version") != _CANDIDATE_VERSION:
-        raise ValueError("candidate comparisons require Candidate Model Version 3")
+        raise ValueError("candidate comparisons require Candidate Model Version 4")
     source_context = _mapping(source.get("source_context"), "source context")
     require_deck_snapshot_identity(source_context.get("analyzed_deck_identity"))
     if source.get("functional_package_model_version") != _PACKAGE_VERSION:
@@ -396,7 +346,7 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
         canonical = _mapping(title.get("canonical_facts"), "canonical facts")
         if canonical.get("title_id") != title_id or canonical.get("name") != name:
             raise ValueError("candidate title contradicts canonical facts")
-        reviewed = _list(title.get("reviewed_features"), "reviewed features")
+        reviewed = normalize(_list(title.get("reviewed_features"), "reviewed features"))
         packages = _validate_packages(title.get("functional_packages"))
         printings = _validate_printings(title.get("known_printings"))
         eligibility = _validate_eligibility(title.get("eligibility"), per_need=False)
@@ -427,6 +377,8 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
         pool = _mapping(raw_pool, "per-need pool")
         source_need = _validate_source_need(pool.get("source_need"))
         key = _need_key(source_need)
+        if encoded(source_need["source_identity"]["analyzed_deck_identity"]) != encoded(source["source_context"]["analyzed_deck_identity"]):
+            raise ValueError("source scope deck contradicts comparison source")
         if key in seen_needs:
             raise ValueError("source need is duplicated")
         seen_needs.add(key)
@@ -452,7 +404,7 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
                 raise ValueError("candidate name contradicts title facts")
             if candidate.get("canonical_facts") != title["canonical_facts"]:
                 raise ValueError("candidate canonical facts contradict title facts")
-            if candidate.get("reviewed_features") != title["reviewed_features"]:
+            if encoded(candidate.get("reviewed_features")) != encoded(title["reviewed_features"]):
                 raise ValueError("candidate reviewed features contradict title facts")
             if _validate_packages(candidate.get("functional_packages")) != title["functional_packages"]:
                 raise ValueError("candidate package facts contradict title facts")
@@ -465,14 +417,14 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
                 raise ValueError("candidate eligibility contradicts title facts")
             if candidate.get("unresolved_eligibility") != title["unresolved_eligibility"]:
                 raise ValueError("candidate unresolved eligibility contradicts title facts")
-            if candidate.get("source_need") != source_need:
+            if encoded(candidate.get("source_need")) != encoded(source_need):
                 raise ValueError("candidate source need contradicts its pool")
             required_feature = candidate_eligibility["required_feature"]
             if (
                 required_feature.get("status") != "matched"
-                or required_feature.get("feature_rule_ids") != source_need["required_feature_rule_ids"]
+                or required_feature.get("feature_rule_ids") != retrieval(source_need)["feature_rule_ids"]
                 or required_feature.get("matching_semantics") != "any"
-                or required_feature.get("relationship") != source_need["required_relationship"]
+                or required_feature.get("relationship") != retrieval(source_need)["relationship"]
             ):
                 raise ValueError("required-feature eligibility contradicts source need")
             evidence = _validate_matching_evidence(
@@ -544,26 +496,14 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
                 for candidate in candidates
             ]
             dimension_rows.append(_dimension(dimension_id, cells))
-        unsupported = [
-            {
-                "title_id": candidate["title_id"],
-                "rule_id": entry["rule_id"],
-                "unsupported_remainder": deepcopy(
-                    entry["dependency_context"]["unsupported_remainder"]
-                ),
-            }
-            for candidate in candidates
-            for entry in candidate["support_context"]["entries"]
-            if entry["dependency_context"]["unsupported_remainder"]
-        ]
         need_matrices.append({
             **pool,
             "dimension_comparisons": dimension_rows,
             "package_comparison": _package_comparison(candidates, titles),
             "evidence_completeness": {
                 "status": "unknown",
-                "reason": "source_evidence_boundary_not_present_in_candidate_facts_v3",
-                "feature_level_unsupported_remainders": unsupported,
+                "reason": "reviewed_features_not_exhaustive",
+                "source_evidence_boundary": deepcopy(pool["source_need"]["evidence_boundary"]),
             },
         })
 
@@ -600,7 +540,7 @@ def build_candidate_comparisons(candidate_facts: dict) -> dict:
             "dimensions": "fixed_registry_order",
         },
         "limitations": [
-            "Comparisons describe returned Candidate Facts Version 3 records only.",
+            "Comparisons describe returned Candidate Facts Version 4 records only.",
             "Pool-local package exclusivity does not establish global uniqueness.",
             "Unknown and not-applicable facts remain distinct.",
             "Support context describes reviewed prerequisites without estimating occurrence.",

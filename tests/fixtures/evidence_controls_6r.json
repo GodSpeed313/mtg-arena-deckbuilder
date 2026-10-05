@@ -1,0 +1,14 @@
+{
+  "kraven": {
+    "title_id": 1103354,
+    "name": "Kraven's Last Hunt",
+    "types": "Enchantment",
+    "rules_text": "Mill five cards. When you do, this Saga deals damage equal to the greatest power among creature cards in your graveyard to target creature.\nTarget creature you control gets +2/+2 until end of turn.\nReturn target creature card from your graveyard to your hand."
+  },
+  "primeval": {
+    "title_id": 43020,
+    "name": "Primeval Bounty",
+    "types": "Enchantment",
+    "rules_text": "Whenever you cast a creature spell, create a 3/3 green Beast creature token.\nWhenever you cast a noncreature spell, put three +1/+1 counters on target creature you control.\nLandfall — Whenever a land you control enters, you gain 3 life."
+  }
+}

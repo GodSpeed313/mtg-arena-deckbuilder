@@ -43,7 +43,7 @@ def _zone(value: Any, label: str) -> str:
     return value
 
 
-def build_proposal_policy(policy_spec: dict) -> dict:
+def _build_policy(policy_spec: dict, *, model_version: str, context_version: str) -> dict:
     """Normalize one explicit V2 proposal-shape policy; grant no deck validity."""
     spec = _mapping(policy_spec, "proposal policy", _SPEC_FIELDS)
     source = _mapping(
@@ -64,8 +64,8 @@ def build_proposal_policy(policy_spec: dict) -> dict:
         raise ValueError("Proposal Policy v2 permits exactly one added copy")
 
     return {
-        "proposal_policy_model_version": PROPOSAL_POLICY_MODEL_VERSION,
-        "required_recommendation_context_model_version": "2",
+        "proposal_policy_model_version": model_version,
+        "required_recommendation_context_model_version": context_version,
         "policy_id": _text(spec["policy_id"], "proposal policy ID"),
         "policy_source": {
             "kind": source["kind"],
@@ -102,3 +102,14 @@ def build_proposal_policy(policy_spec: dict) -> dict:
             "No printing choice, Deck construction, validation, crafting, removal, or mutation occurs here.",
         ],
     }
+
+
+
+def build_proposal_policy(policy_spec: dict) -> dict:
+    """Legacy Policy 2, with its fixed Context 2 requirement."""
+    return _build_policy(policy_spec, model_version="2", context_version="2")
+
+
+def build_proposal_policy_v3(policy_spec: dict) -> dict:
+    """Scoped Policy 3, with its fixed Context 3 requirement."""
+    return _build_policy(policy_spec, model_version="3", context_version="3")

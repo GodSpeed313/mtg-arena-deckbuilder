@@ -25,9 +25,9 @@ from services.preference_policy import build_preference_policy
 from services.candidate_ordering import build_candidate_ordering
 from services.recommendation import build_recommendation_decisions
 from services.recommendation_context import build_recommendation_context
-from services.proposal_policy import build_proposal_policy
-from services.proposal import build_proposal
-from services.proposal_presentation import build_proposal_presentation, require_proposal_presentation
+from services.proposal_policy import build_proposal_policy_v3
+from services.proposal import build_scoped_proposal
+from services.proposal_presentation import build_proposal_presentation_v2, require_proposal_presentation_v2
 from services.validator import DeckRules
 from services.deck_review_report import REPORT_VERSION, LIMITATIONS, project, findings
 
@@ -38,14 +38,14 @@ _STAGES = (
     "proposal", "presentation", "report",
 )
 _VERSIONS = {
-    "analysis": ("analysis_version", "4"), "diagnosis": ("diagnosis_version", "1"),
-    "candidates": ("candidate_model_version", "3"), "candidate_facts": ("candidate_facts_model_version", "3"),
-    "comparison": ("candidate_comparison_model_version", "2"), "strategic_fit": ("strategic_fit_model_version", "2"),
+    "analysis": ("analysis_version", "5"), "diagnosis": ("diagnosis_version", "1"),
+    "candidates": ("candidate_model_version", "4"), "candidate_facts": ("candidate_facts_model_version", "4"),
+    "comparison": ("candidate_comparison_model_version", "3"), "strategic_fit": ("strategic_fit_model_version", "3"),
     "preference_policy": ("strategic_preference_policy_model_version", "2"),
-    "proposal_policy": ("proposal_policy_model_version", "2"),
+    "proposal_policy": ("proposal_policy_model_version", "3"),
     "ordering": ("candidate_ordering_model_version", "2"), "recommendation": ("recommendation_decision_model_version", "2"),
-    "recommendation_context": ("recommendation_context_model_version", "2"),
-    "proposal": ("proposal_model_version", "2"), "presentation": ("proposal_presentation_model_version", "1"),
+    "recommendation_context": ("recommendation_context_model_version", "3"),
+    "proposal": ("proposal_model_version", "2"), "presentation": ("proposal_presentation_model_version", "2"),
 }
 _PROPOSAL_REASONS = {
     "accepted": {"validated"},
@@ -210,7 +210,7 @@ def review_deck(deck_path, *, database_path, format_name=None, colors=None,
         run.skip("proposal", "proposal_not_requested", "No explicit proposal policy supplied.")
     policies = {}
     for name, path, builder in (("preference_policy", preference_policy_path, build_preference_policy),
-                                ("proposal_policy", proposal_policy_path, build_proposal_policy)):
+                                ("proposal_policy", proposal_policy_path, build_proposal_policy_v3)):
         if path is None:
             run.skip(name, "not_supplied", "No explicit declaration supplied; none is inferred.")
         else:
@@ -272,7 +272,7 @@ def review_deck(deck_path, *, database_path, format_name=None, colors=None,
             limit_per_need=candidate_limit), artifact="candidates")
         if candidates is None:
             return run.report
-        facts = run.call("candidate_facts", lambda: derive_candidate_facts(candidates, con), artifact="candidate_facts")
+        facts = run.call("candidate_facts", lambda: derive_candidate_facts(candidates, con, source_analysis=analysis), artifact="candidate_facts")
         if facts is None:
             return run.report
         comparison = run.call("comparison", lambda: build_candidate_comparisons(facts), artifact="comparison")
@@ -304,11 +304,11 @@ def review_deck(deck_path, *, database_path, format_name=None, colors=None,
         if format is None:
             run.skip("proposal", "format_not_supplied", "A concrete proposal requires explicit format context.")
             return run.report
-        proposal = run.call("proposal", lambda: build_proposal(context, declaration, deck, con, format=format, rules=rules),
+        proposal = run.call("proposal", lambda: build_scoped_proposal(context, declaration, deck, con, format=format, rules=rules),
                             artifact="proposal_result_projection")
         if proposal is not None and proposal["status"] == "accepted":
             # Do not expose the builder result until the owner verifier succeeds.
-            run.call("presentation", lambda: require_proposal_presentation(build_proposal_presentation(proposal)), artifact="presentation")
+            run.call("presentation", lambda: require_proposal_presentation_v2(build_proposal_presentation_v2(proposal)), artifact="presentation")
         elif proposal is not None:
             run.skip("presentation", "proposal_not_accepted", "The owner did not accept a proposal; no presentation is constructed.")
     except sqlite3.Error:
