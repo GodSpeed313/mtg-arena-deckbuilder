@@ -2047,3 +2047,13 @@ The #6T carry-forwards are intentionally unchanged: Revalidation 2 still uses it
 fail-safe existing diagnostic classification; #6U introduces no additional string-based
 classification or #6S exception contract. The exported revalidation version constant
 is retained for compatibility without cosmetic cleanup.
+
+## Benchmarks
+
+`tests/fixtures/benchmarks/v1/manifest.json` freezes the eleven historical audit
+inputs. Version 2 inherits those files by reference and adds the operator-selected
+Crimson Forest observation. Manifests preserve byte hashes, provenance, and
+explicit operator attestations; canonical gameplay identities remain deferred.
+Historical coverage reports are notes only because the stand-in database was not
+preserved. Future membership or payload changes require a new benchmark version.
+Run `python -m unittest tests.test_benchmark_manifests` to verify fixture integrity.

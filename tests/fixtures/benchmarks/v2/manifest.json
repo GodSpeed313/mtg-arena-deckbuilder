@@ -1,0 +1,122 @@
+{
+  "benchmark_id": "real-deck",
+  "benchmark_version": "2",
+  "canonical_identity": "deferred",
+  "freeze_baseline_commit": "a4edb274e54a6912d96c7e4922ee47136851a206",
+  "frozen_at": "2026-10-06T23:39:03.899215+00:00",
+  "members": [
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "azorius_control_ryuumei",
+      "path": "tests/fixtures/benchmarks/v1/decks/azorius_control_ryuumei.txt",
+      "sha256": "9ae9bcc3a55ba648b8619973eb5b014487610b0d9c44b785e73fd0623c8e5337"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "azorius_oculus_thief",
+      "path": "tests/fixtures/benchmarks/v1/decks/azorius_oculus_thief.txt",
+      "sha256": "dde9dd99fdb2b6afdb63bcf962ce9a0ae4c166cdf82cca313a59a36331570369"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "golgari_midrange_akimov",
+      "path": "tests/fixtures/benchmarks/v1/decks/golgari_midrange_akimov.txt",
+      "sha256": "1e5addcda2eaff767ec95a7a0b7daaef264210798ba16f3e2275129ad2db000e"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "golgari_midrange_filpin",
+      "path": "tests/fixtures/benchmarks/v1/decks/golgari_midrange_filpin.txt",
+      "sha256": "23f85c3db28909f93968ef9a81d0cdecb7989d8c300fa183cff83eff1904aebb"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "izzet_prowess_lie",
+      "path": "tests/fixtures/benchmarks/v1/decks/izzet_prowess_lie.txt",
+      "sha256": "9c18c0a05472a7fa7330fd328747501c361f39d5d2d1a16256c82fb7d5b082ee"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "izzet_prowess_macdonald",
+      "path": "tests/fixtures/benchmarks/v1/decks/izzet_prowess_macdonald.txt",
+      "sha256": "cdfb7b89f05eb8e05ed6b85a57ceb77dda4bbde53652d20d8dc259cb873cd40d"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "kevin_dragons",
+      "path": "tests/fixtures/benchmarks/v1/decks/kevin_dragons.txt",
+      "sha256": "42e18d285c50642e31b2ce0ca4ccc1a2da5e7be2df0a2390fbddd45ef83e88c4"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "kevin_orzhov",
+      "path": "tests/fixtures/benchmarks/v1/decks/kevin_orzhov.txt",
+      "sha256": "b5683074e571db8a1ba8545754ef60b5aa2aa44c3787a6ef6e509b9faa83f3a4"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "lifegain_memegod",
+      "path": "tests/fixtures/benchmarks/v1/decks/lifegain_memegod.txt",
+      "sha256": "41b45fae795f2665ddeffca0d30918a45883092be9aea1dc6e1005f994dc1e09"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "lifegain_predrag",
+      "path": "tests/fixtures/benchmarks/v1/decks/lifegain_predrag.txt",
+      "sha256": "97c1a17bd6d6582f9dfffd383fd6e33890104edcd745ec4a0f74f8d7ea7e0929"
+    },
+    {
+      "canonical_identity": "deferred",
+      "inherited_from": "1",
+      "member_id": "mono_green_landfall_wolf",
+      "path": "tests/fixtures/benchmarks/v1/decks/mono_green_landfall_wolf.txt",
+      "sha256": "57110d6f93f95678ca1325c569649a02e6a69d2dc7acfee7ce0a0d4f0b0ac267"
+    },
+    {
+      "arena_deck_id": "02e6d899-5e59-4201-82a6-1d042e3fc789",
+      "attestations": [
+        {
+          "locator": "operator authorization: #6V-0, section 2",
+          "provenance": "operator_attestation",
+          "statement": "Crimson Forest is the pending Gruul/Final Fantasy deck referenced in the v1 audit. The archive does not establish this binding."
+        }
+      ],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "Crimson Forest",
+      "measurement_inclusion": {
+        "locator": "operator authorization: #6V-0, section 2",
+        "provenance": "operator_attestation",
+        "status": "operator selected for Benchmark v2; no historical completed measurement claimed"
+      },
+      "member_id": "crimson_forest",
+      "path": "tests/fixtures/benchmarks/v2/decks/crimson_forest.json",
+      "sha256": "01c9d061f9a2a6f6ded26851390c8a3e929d3cd9ba890fce297ae540fa59c7fb",
+      "source": {
+        "event_line": 104,
+        "locator": "C:\\Users\\User\\AppData\\LocalLow\\Wizards Of The Coast\\MTGA\\Player.log:StartHook line 104",
+        "log_path": "C:\\Users\\User\\AppData\\LocalLow\\Wizards Of The Coast\\MTGA\\Player.log",
+        "log_sha256": "aed16f63111ca10994821c1a243e7c99bf181a759c1e35437609e26ebe249c27",
+        "observed_at": "2026-10-04T22:39:35.399081+00:00",
+        "provenance": "arena_log_observation",
+        "rotation_used": false,
+        "selection": "last_received_in_file_order",
+        "serialization": "UTF-8 json.dumps(zones, sort_keys=True, separators=(\",\", \":\")); no trailing newline; zones main/sideboard/commander/companions, ordered rows and null omissions preserved",
+        "source_event": "StartHook"
+      }
+    }
+  ],
+  "parent": "1",
+  "parent_manifest": "tests/fixtures/benchmarks/v1/manifest.json",
+  "provenance": "operator_extended"
+}

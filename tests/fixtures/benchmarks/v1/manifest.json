@@ -1,0 +1,299 @@
+{
+  "benchmark_id": "real-deck",
+  "benchmark_version": "1",
+  "canonical_identity": "deferred",
+  "freeze_baseline_commit": "a4edb274e54a6912d96c7e4922ee47136851a206",
+  "frozen_at": "2026-10-06T23:39:03.899215+00:00",
+  "historical_notes": [
+    {
+      "locator": "audit/results/coverage_9_tournament.json",
+      "provenance": "historical_audit",
+      "reproducibility": "not reproducible: stand-in database not preserved",
+      "sha256": "9a54795db708f5aa3bba74902b7cc233485316d3a626cab594d450584ccba1e0",
+      "use": "historical notes only"
+    },
+    {
+      "locator": "audit/results/coverage_9_tournament.txt",
+      "provenance": "historical_audit",
+      "reproducibility": "not reproducible: stand-in database not preserved",
+      "sha256": "8e1129b60a817a978113cdf51759054c0287720aa567c447135471d75552c6af",
+      "use": "historical notes only"
+    },
+    {
+      "locator": "audit/results/coverage_11_corpus.json",
+      "provenance": "historical_audit",
+      "reproducibility": "not reproducible: stand-in database not preserved",
+      "sha256": "cf76f9c1ac4512643afd76e69ca5401ea7b5e91fae64cab46ffcbf1f7c70ea6d",
+      "use": "historical notes only"
+    },
+    {
+      "locator": "audit/results/coverage_11_corpus.txt",
+      "provenance": "historical_audit",
+      "reproducibility": "not reproducible: stand-in database not preserved",
+      "sha256": "4b7a135e746801716fa3ba40f76715c9fce5f09a3446954955b7c9924285d3dc",
+      "use": "historical notes only"
+    }
+  ],
+  "locator": "audit/README.md:14,55-64",
+  "members": [
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "azorius_control_ryuumei",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:2; audit/results/coverage_11_corpus.json:$.decks[0].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "azorius_control_ryuumei",
+      "path": "tests/fixtures/benchmarks/v1/decks/azorius_control_ryuumei.txt",
+      "sha256": "9ae9bcc3a55ba648b8619973eb5b014487610b0d9c44b785e73fd0623c8e5337",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/azorius_control_ryuumei.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "azorius_oculus_thief",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:3; audit/results/coverage_11_corpus.json:$.decks[1].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "azorius_oculus_thief",
+      "path": "tests/fixtures/benchmarks/v1/decks/azorius_oculus_thief.txt",
+      "sha256": "dde9dd99fdb2b6afdb63bcf962ce9a0ae4c166cdf82cca313a59a36331570369",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/azorius_oculus_thief.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "golgari_midrange_akimov",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:4; audit/results/coverage_11_corpus.json:$.decks[2].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "golgari_midrange_akimov",
+      "path": "tests/fixtures/benchmarks/v1/decks/golgari_midrange_akimov.txt",
+      "sha256": "1e5addcda2eaff767ec95a7a0b7daaef264210798ba16f3e2275129ad2db000e",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/golgari_midrange_akimov.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "golgari_midrange_filpin",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:5; audit/results/coverage_11_corpus.json:$.decks[3].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "golgari_midrange_filpin",
+      "path": "tests/fixtures/benchmarks/v1/decks/golgari_midrange_filpin.txt",
+      "sha256": "23f85c3db28909f93968ef9a81d0cdecb7989d8c300fa183cff83eff1904aebb",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/golgari_midrange_filpin.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "izzet_prowess_lie",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:6; audit/results/coverage_11_corpus.json:$.decks[4].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "izzet_prowess_lie",
+      "path": "tests/fixtures/benchmarks/v1/decks/izzet_prowess_lie.txt",
+      "sha256": "9c18c0a05472a7fa7330fd328747501c361f39d5d2d1a16256c82fb7d5b082ee",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/izzet_prowess_lie.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "izzet_prowess_macdonald",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:7; audit/results/coverage_11_corpus.json:$.decks[5].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "izzet_prowess_macdonald",
+      "path": "tests/fixtures/benchmarks/v1/decks/izzet_prowess_macdonald.txt",
+      "sha256": "cdfb7b89f05eb8e05ed6b85a57ceb77dda4bbde53652d20d8dc259cb873cd40d",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/izzet_prowess_macdonald.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [
+        {
+          "arena_deck_id": "c672cfa1-ef01-4c61-aa35-ca612329e23d",
+          "deck_name": "Dragon Love",
+          "locator": "operator authorization: #6V-0, section 1",
+          "provenance": "operator_attestation",
+          "support": "Independent reconstruction matched the archived 60-card name/quantity multiset to both October 2 and October 4 Arena observations; archive does not supply this name/ID binding."
+        }
+      ],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "kevin_dragons",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:8; audit/results/coverage_11_corpus.json:$.decks[6].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "kevin_dragons",
+      "path": "tests/fixtures/benchmarks/v1/decks/kevin_dragons.txt",
+      "sha256": "42e18d285c50642e31b2ce0ca4ccc1a2da5e7be2df0a2390fbddd45ef83e88c4",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/kevin_dragons.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "kevin_orzhov",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:9; audit/results/coverage_11_corpus.json:$.decks[7].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "kevin_orzhov",
+      "original_export": {
+        "accommodation": {
+          "description": "Measured input imports Hinterland Sanctifier by name, omitting (FDN) 730 because that printing was missing from the stand-in database. Original export is preserved separately.",
+          "locator": "audit/README.md:50-53",
+          "provenance": "historical_audit"
+        },
+        "path": "tests/fixtures/benchmarks/v1/original_exports/kevin_orzhov.txt",
+        "sha256": "baa4e5b7b9d8c37b5bdf51e8daa65fb32813f98c91da47a27236b232e8327f07",
+        "source": {
+          "locator": "audit/decks_original_exports/kevin_orzhov.txt",
+          "provenance": "historical_audit"
+        }
+      },
+      "path": "tests/fixtures/benchmarks/v1/decks/kevin_orzhov.txt",
+      "sha256": "b5683074e571db8a1ba8545754ef60b5aa2aa44c3787a6ef6e509b9faa83f3a4",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/kevin_orzhov.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "lifegain_memegod",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:10; audit/results/coverage_11_corpus.json:$.decks[8].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "lifegain_memegod",
+      "path": "tests/fixtures/benchmarks/v1/decks/lifegain_memegod.txt",
+      "sha256": "41b45fae795f2665ddeffca0d30918a45883092be9aea1dc6e1005f994dc1e09",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/lifegain_memegod.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "lifegain_predrag",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:11; audit/results/coverage_11_corpus.json:$.decks[9].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "lifegain_predrag",
+      "path": "tests/fixtures/benchmarks/v1/decks/lifegain_predrag.txt",
+      "sha256": "97c1a17bd6d6582f9dfffd383fd6e33890104edcd745ec4a0f74f8d7ea7e0929",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/lifegain_predrag.txt",
+        "provenance": "historical_audit"
+      }
+    },
+    {
+      "arena_deck_id": null,
+      "attestations": [],
+      "benchmark_position": null,
+      "canonical_identity": "deferred",
+      "historical_deck_name": "mono_green_landfall_wolf",
+      "measurement_inclusion": {
+        "confidence": "CONFIRMED",
+        "locator": "audit/results/coverage_11_corpus.txt:12; audit/results/coverage_11_corpus.json:$.decks[10].deck; audit/README.md:14,55-62",
+        "provenance": "historical_audit"
+      },
+      "member_id": "mono_green_landfall_wolf",
+      "path": "tests/fixtures/benchmarks/v1/decks/mono_green_landfall_wolf.txt",
+      "sha256": "57110d6f93f95678ca1325c569649a02e6a69d2dc7acfee7ce0a0d4f0b0ac267",
+      "source": {
+        "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+        "locator": "audit/decks/mono_green_landfall_wolf.txt",
+        "provenance": "historical_audit"
+      }
+    }
+  ],
+  "parent": null,
+  "planned_extension": {
+    "deck": "Gruul/Final Fantasy",
+    "locator": "audit/README.md:63-64,163",
+    "provenance": "historical_audit",
+    "status": "planned, not measured"
+  },
+  "provenance": "historical_audit",
+  "source": {
+    "archive_path": "C:\\Users\\User\\Downloads\\mtg_deckbuilder_audit_2026-10-01.zip",
+    "archive_sha256": "1af6e68c5bb71f63fb01581252a1e13ec4f369b09da0f1582a2b2a1a497acd0c",
+    "database_sha256": null,
+    "database_status": "stand-in database not preserved",
+    "locator": "audit/README.md:3-5,14,55-64",
+    "measurement_baseline_commit": "e1db5c6a11d700df554e89b84c08512b2cd9bd55",
+    "prepared_date": "2026-10-01",
+    "provenance": "historical_audit"
+  }
+}
