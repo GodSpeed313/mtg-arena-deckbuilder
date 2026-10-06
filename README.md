@@ -1911,3 +1911,69 @@ structural warning. Role redundancy and concentration are interpretations, not
 quality warnings. Curve output is descriptive only. Mana-source adequacy and
 mechanical conflicts are explicitly not assessed. When the gates do not support
 a conclusion, the command returns `insufficient evidence to diagnose`.
+
+
+## #6T - Scoped non-durable local application (Model 2)
+
+The additive service chain is `Decision 2 -> Revalidation 2 -> Intent 2 ->
+Application/Result 2`. Use `build_pre_execution_revalidation_v2` and
+`require_pre_execution_revalidation_v2` in `services.pre_execution_revalidation`,
+`build_local_deck_application_intent_v2` and `require_local_deck_application_intent_v2`
+in `services.local_deck_application_intent`, and `apply_local_deck_application_v2`
+and `require_local_deck_application_result_v2` in `services.local_deck_application`.
+Each new model discriminator is included in its canonical identity payload;
+the identity-envelope contract remains Version 1.
+
+"Legacy authorities" means the preserved existing v1 APIs/owners: human decision,
+revalidation, intent, application/result, durable operation, prepared execution,
+receipt, and recovery. They remain strict and reject scoped Decision 2 chains.
+Decision Model 2's fixed limitations and Presentation Models 1/2 are unchanged.
+No artifact-supplied model/version value selects its own authority owner.
+
+Revalidation 2 verifies the complete scoped decision before examining its state.
+Declined returns `not_ready / decision_declined` before current-state checks.
+Approved requires exact captured gameplay-baseline equality, reconstruction of
+one approved add of one copy, current printing/title consistency, current deck
+validation, and appropriate resource evidence. Unsupported or malformed versions,
+including unhashable values, fail with typed rejection. Intent 2 additionally
+requires explicit destination selection and eligible no-spend evidence.
+
+The executor shares the v1 reconstruction and mutation mechanics. Under the
+existing local validation authority guard and managed-store writer transaction,
+it checks current destination identity/generation, revision, baseline, metadata,
+and validation policy, reruns **Revalidation 2**, checks exact action/result and
+current no-spend state, then replaces the deck and verifies Result 2 before
+commit. Intent creation is historical evidence, not sufficient current-state
+authorization. Failure rolls back; metadata is preserved. No aggregation,
+retargeting, crafting, spending, Arena IO, or human abstention is introduced.
+
+Scoped evidence is historical, digest-bound provenance. Execution does not rerun
+scoped analysis and does not prove that a scoped need was resolved or improved,
+that prerequisites are satisfied, or that evidence is exhaustive/current external
+truth. Current execution validation is a separate check, not newer evidence the
+human originally approved.
+
+Decision 2 is not bound to one managed-store destination and approval is not
+globally consumed or globally single-use. Intent 2 selects one destination for
+that application. Replay of the same intent against an already-mutated destination
+fails current revision/baseline checks. A separate explicit application request
+against another destination with the required matching gameplay baseline may
+succeed. These state checks do not implement permanent approval consumption.
+Destination-bound approvals, consumption, revocation, globally single-use authority,
+and additional replay prevention require separately governed future work.
+
+Model 2 execution is intentionally **non-durable only** until a separately reviewed
+#6U. The deck write commits atomically to the managed store, but Result 2 is a
+non-durable acknowledgment, not a durable receipt or recovery record. Lost
+acknowledgment or uncertain commit does not authorize automatic retry or inferred
+success. There is no Operation 2, Receipt 2, Recovery 2, prepared-execution Model 2,
+or mixed-version durable reader dispatch in #6T. Existing durable v1 behavior is
+unchanged. A successful Model 2 write can invalidate a previously prepared v1
+operation through existing revision/baseline checks; recovery then still reports
+that v1 operation as prepared with no committed receipt, not terminal failure.
+
+#6U will separately review durable scoped prepare/execution/receipt/recovery and
+mixed storage. Its persisted reader must receive an explicit expected model from
+the calling authority and verify stored data against it; stored discriminators
+must not select an authority owner. Authority may fork by model version;
+mutation mechanics must remain shared.

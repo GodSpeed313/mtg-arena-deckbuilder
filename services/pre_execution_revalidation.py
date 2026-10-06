@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import partial
 from dataclasses import asdict, fields
 import hashlib
 import json
@@ -12,6 +13,7 @@ from mtgadb.deck_identity import build_deck_snapshot_identity, require_deck_snap
 from mtgadb.model import Collection, Deck, Format, Inventory
 from mtgadb.modes import OperatingMode
 from services.human_proposal_decision import require_human_proposal_decision
+from services.scoped_human_proposal_decision import require_human_proposal_decision_v2
 from services.proposal_presentation import canonical_validation_context
 from services.validator import DeckRules, ValidationReport, validate_deck
 
@@ -35,6 +37,15 @@ _LIMITATIONS = [
 ]
 
 
+_V2_LIMITATIONS = [*_LIMITATIONS,
+    "Scoped evidence is historical digest-bound provenance; revalidation does not rerun scoped analysis or establish that the need was resolved or improved.",
+]
+
+
+def _result(*args, **kwargs):
+    return _result_for_model(*args, **kwargs)
+
+
 def _encoded(value: dict) -> bytes:
     try:
         return json.dumps(
@@ -56,7 +67,7 @@ def _identity(payload: dict) -> dict:
     }
 
 
-def _result(status: str, reason: str, *, evidence: Any = None,
+def _result_for_model(status: str, reason: str, *, evidence: Any = None,
             decision: dict | None = None, delta: dict | None = None,
             baseline_identity: dict | None = None,
             result_identity: dict | None = None,
@@ -64,10 +75,11 @@ def _result(status: str, reason: str, *, evidence: Any = None,
             printing_fact: dict | None = None,
             validation: dict | None = None,
             resource_assessment: dict | None = None,
-            revalidation_identity: dict | None = None) -> dict:
+            revalidation_identity: dict | None = None,
+            model_version: str = "1") -> dict:
     return {
         "pre_execution_revalidation_model_version": (
-            PRE_EXECUTION_REVALIDATION_MODEL_VERSION
+            model_version
         ),
         "source_human_proposal_decision_model_version": (
             None if decision is None
@@ -96,7 +108,7 @@ def _result(status: str, reason: str, *, evidence: Any = None,
         "resource_assessment": deepcopy(resource_assessment),
         "destination_assessment": deepcopy(_DESTINATION_ASSESSMENT),
         "pre_execution_revalidation_identity": deepcopy(revalidation_identity),
-        "limitations": deepcopy(_LIMITATIONS),
+        "limitations": deepcopy(_LIMITATIONS if model_version == "1" else _V2_LIMITATIONS),
     }
 
 
@@ -284,8 +296,11 @@ def require_pre_execution_revalidation(value: dict) -> dict:
         raise ValueError("pre-execution revalidation artifact is malformed") from exc
 
 
-def _require_revalidation(value: dict) -> dict:
-    _closed(value, set(_result("", "")), "pre-execution revalidation")
+def _require_revalidation(value: dict, *, model_version="1", decision_verifier=None) -> dict:
+    # Owners are fixed by trusted entry points, never selected by artifact data.
+    decision_verifier = require_human_proposal_decision if decision_verifier is None else decision_verifier
+    make_result = partial(_result_for_model, model_version=model_version)
+    _closed(value, set(make_result("", "")), "pre-execution revalidation")
     reason = value["reason"]
     statuses = {
         "fresh_validation_passed": "revalidated",
@@ -304,7 +319,7 @@ def _require_revalidation(value: dict) -> dict:
     args = {}
 
     def finish() -> dict:
-        expected = _result(statuses[reason], reason, **args)
+        expected = make_result(statuses[reason], reason, **args)
         if not _same(value, expected):
             raise ValueError("revalidation artifact contradicts its verified evidence or stage")
         return deepcopy(expected)
@@ -319,7 +334,7 @@ def _require_revalidation(value: dict) -> dict:
             raise ValueError("outcome requires a verified human decision")
         diagnostic()
         return finish()
-    decision = require_human_proposal_decision(value["source_human_proposal_decision"])
+    decision = decision_verifier(value["source_human_proposal_decision"])
     args["decision"] = decision
     if decision["decision"] == "declined":
         if reason != "decision_declined":
@@ -397,7 +412,7 @@ def _require_revalidation(value: dict) -> dict:
     if reason != expected_reason:
         raise ValueError("outcome contradicts validation or resource assessment")
     if reason == "fresh_validation_passed":
-        expected = _result("revalidated", reason, **args)
+        expected = make_result("revalidated", reason, **args)
         payload_fields = {
             "pre_execution_revalidation_model_version", "status", "reason",
             "human_proposal_decision_identity", "proposal_identity", "presentation_identity",
@@ -409,7 +424,7 @@ def _require_revalidation(value: dict) -> dict:
     return finish()
 
 
-def build_pre_execution_revalidation(
+def _build_pre_execution_revalidation(
     human_decision: dict,
     current_baseline_deck: Deck,
     con: sqlite3.Connection,
@@ -419,16 +434,23 @@ def build_pre_execution_revalidation(
     mode: OperatingMode,
     collection: Collection | None = None,
     inventory: Inventory | None = None,
+    model_version="1", decision_verifier=None,
 ) -> dict:
     """Freshly check one approved delta without applying or authorizing it."""
+    decision_verifier = require_human_proposal_decision if decision_verifier is None else decision_verifier
+    make_result = partial(_result_for_model, model_version=model_version)
     try:
-        decision = require_human_proposal_decision(human_decision)
+        decision = decision_verifier(human_decision)
     except (TypeError, ValueError) as exc:
         reason = _decision_failure_reason(exc)
-        return _result("rejected", reason, evidence=str(exc))
+        # Model 2 owner uses an explicit model diagnostic without the word version.
+        # Classify only its rejection; never inspect/hash an untrusted discriminator.
+        if model_version == "2" and str(exc) == "Human Proposal Decision Model 2 / Presentation 2 is required":
+            reason = "unsupported_version"
+        return make_result("rejected", reason, evidence=str(exc))
 
     if decision["decision"] == "declined":
-        return _result("not_ready", "decision_declined", decision=decision)
+        return make_result("not_ready", "decision_declined", decision=decision)
 
     proposal_payload = decision["proposal_identity"]["canonical_payload"]
     delta = deepcopy(proposal_payload["delta"])
@@ -436,19 +458,19 @@ def build_pre_execution_revalidation(
     expected_result = proposal_payload["resulting_deck_identity"]
 
     if not _well_formed_baseline(current_baseline_deck):
-        return _result(
+        return make_result(
             "rejected", "malformed_input", evidence="current baseline Deck is malformed",
             decision=decision, delta=delta,
         )
     try:
         baseline_identity = build_deck_snapshot_identity(current_baseline_deck)
     except ValueError as exc:
-        return _result(
+        return make_result(
             "rejected", "malformed_input", evidence=str(exc),
             decision=decision, delta=delta,
         )
     if baseline_identity != expected_baseline:
-        return _result(
+        return make_result(
             "not_ready", "baseline_snapshot_mismatch",
             evidence={
                 "approved_digest": expected_baseline["digest"],
@@ -467,7 +489,7 @@ def build_pre_execution_revalidation(
     )
     result_identity = build_deck_snapshot_identity(working_deck)
     if result_identity != expected_result:
-        return _result(
+        return make_result(
             "rejected", "result_identity_mismatch",
             evidence={
                 "approved_digest": expected_result["digest"],
@@ -480,20 +502,20 @@ def build_pre_execution_revalidation(
     if not isinstance(format, Format) or not isinstance(rules, DeckRules) or (
         not isinstance(mode, OperatingMode)
     ):
-        return _result(
+        return make_result(
             "rejected", "malformed_input",
             evidence="explicit Format, DeckRules, and OperatingMode are required",
             decision=decision, delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity,
         )
     if collection is not None and not _well_formed_collection(collection):
-        return _result(
+        return make_result(
             "rejected", "malformed_input", evidence="collection is malformed",
             decision=decision, delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity,
         )
     if inventory is not None and not _well_formed_inventory(inventory):
-        return _result(
+        return make_result(
             "rejected", "malformed_input", evidence="inventory is malformed",
             decision=decision, delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity,
@@ -503,13 +525,13 @@ def build_pre_execution_revalidation(
             format=format, rules=rules, mode=mode,
         )
     except ValueError as exc:
-        return _result(
+        return make_result(
             "rejected", "malformed_input", evidence=str(exc),
             decision=decision, delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity,
         )
     if not isinstance(con, sqlite3.Connection):
-        return _result(
+        return make_result(
             "rejected", "validation_unavailable",
             evidence="explicit SQLite connection is required", decision=decision,
             delta=delta, baseline_identity=baseline_identity,
@@ -525,13 +547,13 @@ def build_pre_execution_revalidation(
         ).fetchone()
         printing_fact = None if row is None else _printing_fact(row)
     except (sqlite3.Error, TypeError, ValueError, KeyError, IndexError) as exc:
-        return _result(
+        return make_result(
             "rejected", "validation_unavailable", evidence=str(exc), decision=decision,
             delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity, validation_context=validation_context,
         )
     if printing_fact is None:
-        return _result(
+        return make_result(
             "not_ready", "current_printing_unavailable", decision=decision,
             delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity, validation_context=validation_context,
@@ -539,7 +561,7 @@ def build_pre_execution_revalidation(
     if type(printing_fact["title_id"]) is not int or (
         printing_fact["title_id"] != delta["title_id"]
     ):
-        return _result(
+        return make_result(
             "not_ready", "current_printing_identity_mismatch",
             evidence={
                 "approved_title_id": delta["title_id"],
@@ -556,14 +578,14 @@ def build_pre_execution_revalidation(
             collection=collection, inventory=inventory,
         )
     except (sqlite3.Error, ValueError, TypeError, KeyError) as exc:
-        return _result(
+        return make_result(
             "rejected", "validation_unavailable", evidence=str(exc), decision=decision,
             delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity, validation_context=validation_context,
             printing_fact=printing_fact,
         )
     if not isinstance(report, ValidationReport):
-        return _result(
+        return make_result(
             "rejected", "validation_unavailable",
             evidence="validator returned no ValidationReport", decision=decision,
             delta=delta, baseline_identity=baseline_identity,
@@ -573,14 +595,14 @@ def build_pre_execution_revalidation(
     validation = _validation_evidence(report)
     resource_assessment = _resource_assessment(mode, validation)
     if not validation["valid"]:
-        return _result(
+        return make_result(
             "not_ready", "current_validation_failed", decision=decision, delta=delta,
             baseline_identity=baseline_identity, result_identity=result_identity,
             validation_context=validation_context, printing_fact=printing_fact,
             validation=validation, resource_assessment=resource_assessment,
         )
     if resource_assessment["resource_status"] == "affordable_spend_not_authorized":
-        return _result(
+        return make_result(
             "not_ready", "resource_authorization_required", decision=decision,
             delta=delta, baseline_identity=baseline_identity,
             result_identity=result_identity, validation_context=validation_context,
@@ -590,7 +612,7 @@ def build_pre_execution_revalidation(
 
     semantic_payload = {
         "pre_execution_revalidation_model_version": (
-            PRE_EXECUTION_REVALIDATION_MODEL_VERSION
+            model_version
         ),
         "status": "revalidated",
         "reason": "fresh_validation_passed",
@@ -609,10 +631,40 @@ def build_pre_execution_revalidation(
         "destination_assessment": deepcopy(_DESTINATION_ASSESSMENT),
     }
     revalidation_identity = _identity(semantic_payload)
-    return _result(
+    return make_result(
         "revalidated", "fresh_validation_passed", decision=decision, delta=delta,
         baseline_identity=baseline_identity, result_identity=result_identity,
         validation_context=validation_context, printing_fact=printing_fact,
         validation=validation, resource_assessment=resource_assessment,
         revalidation_identity=revalidation_identity,
     )
+
+
+def build_pre_execution_revalidation(human_decision: dict, current_baseline_deck: Deck,
+        con: sqlite3.Connection, *, format: Format, rules: DeckRules,
+        mode: OperatingMode, collection: Collection | None = None,
+        inventory: Inventory | None = None) -> dict:
+    """Legacy Model 1 owner; never accepts scoped decisions."""
+    return _build_pre_execution_revalidation(human_decision, current_baseline_deck, con,
+        format=format, rules=rules, mode=mode, collection=collection, inventory=inventory)
+
+
+def build_pre_execution_revalidation_v2(human_decision: dict, current_baseline_deck: Deck,
+        con: sqlite3.Connection, *, format: Format, rules: DeckRules,
+        mode: OperatingMode, collection: Collection | None = None,
+        inventory: Inventory | None = None) -> dict:
+    """Fresh Model 2 check of the exact captured scoped approval; no analysis rerun."""
+    return _build_pre_execution_revalidation(human_decision, current_baseline_deck, con,
+        format=format, rules=rules, mode=mode, collection=collection, inventory=inventory,
+        model_version="2", decision_verifier=require_human_proposal_decision_v2)
+
+
+def require_pre_execution_revalidation_v2(value: dict) -> dict:
+    """Historical Model 2 consistency only, not current execution authority."""
+    try:
+        _require_json(value)
+        _encoded(value)
+        return _require_revalidation(value, model_version="2",
+                                     decision_verifier=require_human_proposal_decision_v2)
+    except (TypeError, KeyError, IndexError, RecursionError) as exc:
+        raise ValueError("pre-execution revalidation artifact is malformed") from exc

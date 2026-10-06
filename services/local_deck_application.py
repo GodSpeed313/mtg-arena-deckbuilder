@@ -9,13 +9,16 @@ from mtgadb import managed_deck_store as store
 from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.model import Collection, Inventory, Deck
 from mtgadb.modes import OperatingMode
-from services.local_deck_application_intent import require_local_deck_application_intent
+from services.local_deck_application_intent import (
+    require_local_deck_application_intent, require_local_deck_application_intent_v2,
+)
 from services.local_execution_validation import (
     LocalDeckApplicationError, LocalExecutionValidationAuthorityV1,
     _encoded, _fail, _resource_inputs,
 )
 from services.pre_execution_revalidation import (
     build_pre_execution_revalidation, require_pre_execution_revalidation,
+    build_pre_execution_revalidation_v2, require_pre_execution_revalidation_v2,
 )
 
 
@@ -34,6 +37,12 @@ _LIMITATIONS = [
     "In-file store identities cannot detect arbitrary coherent copying, replacement, rollback, or tampering.",
     "No crafting, spending, Arena IO, export/import, upstream artifact mutation, or automatic acceptance is performed.",
     "The upstream candidate-pool construction guarantee is retained; discarded original completeness evidence cannot be independently reconstructed.",
+]
+_V2_LIMITATIONS = [*_LIMITATIONS,
+    "Decision 2 is not destination-bound. Intent 2 selects one destination for this application.",
+    "Approval is not globally consumed and is not globally single-use. Same-destination replay fails through current revision/baseline checks; a separate application request against another matching destination may succeed.",
+    "Scoped evidence is historical digest-bound provenance. Execution does not rerun scoped analysis or prove that the need was resolved or improved.",
+    "Result 2 is a non-durable acknowledgment, not a durable receipt or recovery record; no Operation 2, Receipt 2, Recovery 2 or prepared-execution Model 2 exists in #6T.",
 ]
 _FIELDS = {"local_deck_application_result_model_version", "status", "reason",
            "source_local_deck_application_intent", "source_local_deck_application_intent_identity",
@@ -66,8 +75,16 @@ def _reconstruct(intent, current):
 
 
 def _fresh(value, intent):
+    return _fresh_with_verifier(value, intent, require_pre_execution_revalidation)
+
+
+def _fresh_v2(value, intent):
+    return _fresh_with_verifier(value, intent, require_pre_execution_revalidation_v2)
+
+
+def _fresh_with_verifier(value, intent, verifier):
     try:
-        value = require_pre_execution_revalidation(value)
+        value = verifier(value)
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
         _fail("validation_unavailable")
     historical = intent["source_pre_execution_revalidation"]
@@ -134,9 +151,17 @@ def _context(value, mode):
 
 
 def _result(intent, previous, fresh, context, resulting):
+    return _result_for_model(intent, previous, fresh, context, resulting, model_version="1")
+
+
+def _result_v2(intent, previous, fresh, context, resulting):
+    return _result_for_model(intent, previous, fresh, context, resulting, model_version="2")
+
+
+def _result_for_model(intent, previous, fresh, context, resulting, *, model_version):
     # Called before commit; never returned to the caller until commit succeeds.
     artifact = {
-        "local_deck_application_result_model_version": "1", "status": "applied",
+        "local_deck_application_result_model_version": model_version, "status": "applied",
         "reason": "exact_local_add_committed", "source_local_deck_application_intent": deepcopy(intent),
         "source_local_deck_application_intent_identity": deepcopy(intent[_INTENT_ID]),
         "previous_destination_state": store.serialize_destination_state(previous),
@@ -145,7 +170,8 @@ def _result(intent, previous, fresh, context, resulting):
         "resulting_destination_state": store.serialize_destination_state(resulting),
         "resulting_deck_identity": deepcopy(resulting["gameplay_snapshot_identity"]),
         "previous_revision": previous["revision"], "new_revision": resulting["revision"],
-        "execution_scope": deepcopy(_SCOPE), "limitations": deepcopy(_LIMITATIONS),
+        "execution_scope": deepcopy(_SCOPE), "limitations": deepcopy(
+            _LIMITATIONS if model_version == "1" else _V2_LIMITATIONS),
     }
     payload = deepcopy(artifact)
     artifact[_ID] = {"local_deck_application_result_identity_version": "1",
@@ -155,16 +181,29 @@ def _result(intent, previous, fresh, context, resulting):
 
 
 def require_local_deck_application_result(value: dict) -> dict:
+    """Strict Result 1 owner retained for durable v1 callers."""
+    return _require_result(value,
+        lambda artifact: require_local_deck_application_intent(artifact),
+        lambda evidence, intent: _fresh(evidence, intent),
+        lambda *args: _result(*args))
+
+
+def require_local_deck_application_result_v2(value: dict) -> dict:
+    """Strict historical Result 2 consistency, not durable proof of execution."""
+    return _require_result(value, require_local_deck_application_intent_v2, _fresh_v2, _result_v2)
+
+
+def _require_result(value, intent_verifier, fresh_verifier, result_builder) -> dict:
     """Historical consistency only, not proof of commit, freshness or authority."""
     try:
         if type(value) is not dict or set(value) != _FIELDS:
             raise ValueError("invalid shape")
         _encoded(value)
-        intent = require_local_deck_application_intent(value["source_local_deck_application_intent"])
+        intent = intent_verifier(value["source_local_deck_application_intent"])
         previous = store.require_destination_state(value["previous_destination_state"])
         if not _same(store.serialize_destination_state(previous), intent["source_destination_state"]):
             raise ValueError("different baseline")
-        fresh = _fresh(value["execution_pre_execution_revalidation"], intent)
+        fresh = fresh_verifier(value["execution_pre_execution_revalidation"], intent)
         context = _context(value["execution_context"], fresh["current_validation_context"]["mode"])
         resulting = store.require_destination_state(value["resulting_destination_state"])
         if not _same(resulting["gameplay_snapshot_identity"], intent["expected_result_deck_identity"]):
@@ -174,7 +213,7 @@ def require_local_deck_application_result(value: dict) -> dict:
                   "gameplay_snapshot_identity": build_deck_snapshot_identity(replacement)}
         if not _same(store.serialize_destination_state(resulting), store.serialize_destination_state(wanted)):
             raise ValueError("different result")
-        expected = _result(intent, previous, fresh, context, resulting)
+        expected = result_builder(intent, previous, fresh, context, resulting)
         if not _same(expected, value):
             raise ValueError("inconsistent artifact")
         return expected
@@ -189,8 +228,30 @@ def apply_local_deck_application(intent: dict, *, store_path,
     No public replacement call, caller Deck, validation flags, or action overrides.
     An uncertain commit is an error, never inferred success or an automatic retry.
     """
+    # Defer legacy global lookup until the original call positions in _apply.
+    return _apply(intent, store_path=store_path, validation_authority=validation_authority,
+        intent_verifier=lambda artifact: require_local_deck_application_intent(artifact),
+        revalidation_builder=lambda *args, **kwargs: build_pre_execution_revalidation(*args, **kwargs),
+        fresh_verifier=lambda evidence, verified: _fresh(evidence, verified),
+        result_builder=lambda *args: _result(*args),
+        result_verifier=lambda artifact: require_local_deck_application_result(artifact))
+
+
+def apply_local_deck_application_v2(intent: dict, *, store_path,
+                                    validation_authority: LocalExecutionValidationAuthorityV1) -> dict:
+    """Apply one scoped intent atomically; acknowledgment is non-durable."""
+    return _apply(intent, store_path=store_path, validation_authority=validation_authority,
+        intent_verifier=require_local_deck_application_intent_v2,
+        revalidation_builder=build_pre_execution_revalidation_v2, fresh_verifier=_fresh_v2,
+        result_builder=_result_v2, result_verifier=require_local_deck_application_result_v2)
+
+
+def _apply(intent, *, store_path, validation_authority, intent_verifier,
+           revalidation_builder, fresh_verifier, result_builder, result_verifier):
+    # Only fixed owners above supply these callables. Artifact data never dispatches.
+    # One shared mutation sequence: authority guard -> writer -> checks -> commit.
     try:
-        verified = require_local_deck_application_intent(intent)
+        verified = intent_verifier(intent)
     except (ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError):
         raise LocalDeckApplicationError("invalid_intent") from None
     if type(validation_authority) is not LocalExecutionValidationAuthorityV1:
@@ -204,18 +265,18 @@ def apply_local_deck_application(intent: dict, *, store_path,
             revision = store._next_revision(current)
             replacement = _reconstruct(verified, current)
             try:
-                evidence = build_pre_execution_revalidation(
+                evidence = revalidation_builder(
                     verified["source_pre_execution_revalidation"]["source_human_proposal_decision"],
                     current["deck"], view["con"], format=view["format"], rules=view["rules"],
                     mode=view["mode"], collection=view["collection"], inventory=view["inventory"],
                 )
             except (ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError, OverflowError):
                 raise LocalDeckApplicationError("validation_unavailable") from None
-            fresh = _fresh(evidence, verified)
+            fresh = fresh_verifier(evidence, verified)
             resulting = store._replace_in_transaction(con, meta, current, replacement, current["metadata"], revision)
             try:
-                result = require_local_deck_application_result(
-                    _result(verified, current, fresh, view["context"], resulting))
+                result = result_verifier(
+                    result_builder(verified, current, fresh, view["context"], resulting))
             except ValueError:
                 raise store.ManagedDeckStoreError("result_mismatch") from None
         # Connection context commits before the authority guard is released.

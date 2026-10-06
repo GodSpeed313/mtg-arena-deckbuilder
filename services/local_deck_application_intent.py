@@ -10,7 +10,9 @@ from mtgadb.managed_deck_store import (
     MAX_INTEGER, require_destination_state, serialize_destination_state,
 )
 from mtgadb.model import Deck
-from services.pre_execution_revalidation import require_pre_execution_revalidation
+from services.pre_execution_revalidation import (
+    require_pre_execution_revalidation, require_pre_execution_revalidation_v2,
+)
 
 
 LOCAL_DECK_APPLICATION_INTENT_MODEL_VERSION = "1"
@@ -34,6 +36,13 @@ _LIMITATIONS = [
     "Intent is not single-use, replay prevention, an operation receipt, or exactly-once protection; a coherently rewritten and rehashed artifact may remain internally valid.",
     "In-file identities cannot detect arbitrary external store copying, rollback, replacement, or coherent tampering; filesystem paths are not semantic destination identity.",
 ]
+_V2_LIMITATIONS = [*_LIMITATIONS,
+    "Decision 2 is not destination-bound. Intent 2 selects one destination for this application.",
+    "Approval is not globally consumed and is not globally single-use. Same-destination replay fails through current revision/baseline checks; a separate application request against another matching destination may succeed.",
+    "Scoped evidence is historical digest-bound provenance. Application does not rerun scoped analysis or prove that the need was resolved or improved.",
+    "Model 2 application returns a non-durable acknowledgment, not a durable receipt or recovery record; no Model 2 prepared execution or recovery exists in #6T.",
+]
+
 _FIELDS = {
     "local_deck_application_intent_model_version", "status", "reason",
     "source_pre_execution_revalidation", "source_destination_state", "application_request",
@@ -93,8 +102,10 @@ def _request(value, destination):
     }
 
 
-def _build(pre_execution_revalidation, destination_state, request_spec):
-    revalidation = require_pre_execution_revalidation(pre_execution_revalidation)
+def _build(pre_execution_revalidation, destination_state, request_spec, *,
+           model_version="1", revalidation_verifier=None):
+    revalidation_verifier = require_pre_execution_revalidation if revalidation_verifier is None else revalidation_verifier
+    revalidation = revalidation_verifier(pre_execution_revalidation)
     if revalidation["status"] != "revalidated" or revalidation["reason"] != "fresh_validation_passed":
         raise ValueError("positive pre-execution revalidation is required")
     if revalidation["source_human_proposal_decision"]["decision"] != "approved" or (
@@ -140,12 +151,13 @@ def _build(pre_execution_revalidation, destination_state, request_spec):
     _equal(result, revalidation["reconstructed_result_deck_identity"], "prospective revalidation result")
     _equal(result, proposal["resulting_deck_identity"], "prospective proposal result")
     artifact = {
-        "local_deck_application_intent_model_version": LOCAL_DECK_APPLICATION_INTENT_MODEL_VERSION,
+        "local_deck_application_intent_model_version": model_version,
         "status": "intent_recorded", "reason": "explicit_local_application_requested",
         "source_pre_execution_revalidation": revalidation,
         "source_destination_state": destination, "application_request": request,
         "derived_action": action, "expected_result_deck_identity": result,
-        "application_scope": deepcopy(_SCOPE), "limitations": deepcopy(_LIMITATIONS),
+        "application_scope": deepcopy(_SCOPE), "limitations": deepcopy(
+            _LIMITATIONS if model_version == "1" else _V2_LIMITATIONS),
     }
     payload = {key: deepcopy(artifact[key]) for key in (
         "local_deck_application_intent_model_version", "status", "reason", "application_request",
@@ -178,6 +190,29 @@ def require_local_deck_application_intent(value: dict) -> dict:
                           value["source_destination_state"], value["application_request"])
         # Rebuilding verifies every version, identity field, digest, projection,
         # normalized request, scope and limitation, including unknown fields.
+        _equal(value, expected, "local deck application intent")
+        return expected
+    except (TypeError, KeyError, AttributeError, RecursionError, IndexError) as exc:
+        raise ValueError("application intent artifact is malformed") from exc
+
+
+def build_local_deck_application_intent_v2(pre_execution_revalidation, destination_state, request_spec) -> dict:
+    """Model 2 owner for one explicit destination request; performs no IO."""
+    try:
+        return _build(pre_execution_revalidation, destination_state, request_spec,
+                      model_version="2", revalidation_verifier=require_pre_execution_revalidation_v2)
+    except (TypeError, KeyError, AttributeError, RecursionError, IndexError) as exc:
+        raise ValueError("application intent inputs are malformed") from exc
+
+
+def require_local_deck_application_intent_v2(value: dict) -> dict:
+    """Verify Model 2 historical consistency, never consume an approval."""
+    try:
+        _closed(value, _FIELDS, "local deck application intent")
+        _encoded(value)
+        expected = build_local_deck_application_intent_v2(
+            value["source_pre_execution_revalidation"],
+            value["source_destination_state"], value["application_request"])
         _equal(value, expected, "local deck application intent")
         return expected
     except (TypeError, KeyError, AttributeError, RecursionError, IndexError) as exc:
