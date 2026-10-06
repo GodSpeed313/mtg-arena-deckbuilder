@@ -70,16 +70,24 @@ def _same(left, right):
 
 
 def _intent(value):
+    return _verify_intent(value, lambda artifact: require_local_deck_application_intent(artifact))
+
+
+def _verify_intent(value, verifier):
     try:
-        return require_local_deck_application_intent(value)
+        return verifier(value)
     except (ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError, OverflowError):
         raise LocalDeckApplicationError("invalid_intent") from None
 
 
 def _operation(intent, operation_id):
+    return _build_operation(intent, operation_id, model_version="1")
+
+
+def _build_operation(intent, operation_id, *, model_version):
     destination = intent["source_destination_state"]
     return {
-        "local_deck_application_operation_model_version": "1", "operation_id": _uuid(operation_id),
+        "local_deck_application_operation_model_version": model_version, "operation_id": _uuid(operation_id),
         "store_id": destination["store_id"], "store_generation": destination["store_generation"],
         "record_id": destination["record_id"], "expected_revision": destination["revision"],
         "source_intent": deepcopy(intent), "source_intent_identity": deepcopy(intent[_INTENT_ID]),
@@ -87,12 +95,16 @@ def _operation(intent, operation_id):
 
 
 def _require_operation(value):
+    return _verify_operation(value, _v1_owners())
+
+
+def _verify_operation(value, owners):
     try:
         if type(value) is not dict or set(value) != _OP_FIELDS:
             raise ValueError("invalid shape")
         _encoded(value)
-        intent = require_local_deck_application_intent(value["source_intent"])
-        expected = _operation(intent, value["operation_id"])
+        intent = owners["intent_verifier"](value["source_intent"])
+        expected = owners["operation_builder"](intent, value["operation_id"])
         if not _same(expected, value):
             raise ValueError("invalid binding")
         return expected
@@ -101,12 +113,16 @@ def _require_operation(value):
 
 
 def _receipt(operation, result):
+    return _build_receipt(operation, result, model_version="1", limitations=_LIMITATIONS)
+
+
+def _build_receipt(operation, result, *, model_version, limitations):
     value = {
-        "local_deck_application_receipt_model_version": "1", "status": "committed",
+        "local_deck_application_receipt_model_version": model_version, "status": "committed",
         "reason": "deck_and_receipt_committed_atomically", "operation_id": operation["operation_id"],
         "store_id": operation["store_id"], "store_generation": operation["store_generation"],
         "source_intent_identity": deepcopy(operation["source_intent_identity"]),
-        "application_result": deepcopy(result), "limitations": deepcopy(_LIMITATIONS),
+        "application_result": deepcopy(result), "limitations": deepcopy(limitations),
     }
     payload = deepcopy(value)
     value[_RECEIPT_ID] = {"local_deck_application_receipt_identity_version": "1",
@@ -117,13 +133,17 @@ def _receipt(operation, result):
 
 def require_local_deck_application_receipt(value: dict) -> dict:
     """Detached historical consistency; no IO or proof of durable storage."""
+    return _verify_receipt(value, _v1_owners())
+
+
+def _verify_receipt(value, owners):
     try:
         if type(value) is not dict or set(value) != _RECEIPT_FIELDS:
             raise ValueError("invalid shape")
         _encoded(value)
-        result = application.require_local_deck_application_result(value["application_result"])
-        operation = _operation(result["source_local_deck_application_intent"], value["operation_id"])
-        expected = _receipt(operation, result)
+        result = owners["result_verifier"](value["application_result"])
+        operation = owners["operation_builder"](result["source_local_deck_application_intent"], value["operation_id"])
+        expected = owners["receipt_builder"](operation, result)
         if not _same(value, expected):
             raise ValueError("invalid binding")
         return expected
@@ -154,6 +174,10 @@ def _loads(raw):
 
 
 def _read_operation(con, meta, *, operation_id=None, intent_digest=None):
+    return _read_expected_operation(con, meta, operation_id=operation_id, intent_digest=intent_digest, owners=_v1_owners())
+
+
+def _read_expected_operation(con, meta, *, operation_id=None, intent_digest=None, owners):
     if operation_id is not None:
         row = con.execute("SELECT * FROM managed_application_operations WHERE operation_id=?", (operation_id,)).fetchone()
     else:
@@ -162,8 +186,8 @@ def _read_operation(con, meta, *, operation_id=None, intent_digest=None):
     if row is None:
         return None
     try:
-        intent = require_local_deck_application_intent(_loads(row["intent_json"]))
-        operation = _operation(intent, row["operation_id"])
+        intent = owners["intent_verifier"](_loads(row["intent_json"]))
+        operation = owners["operation_builder"](intent, row["operation_id"])
         if operation["store_id"] != meta["store_id"] or operation["store_generation"] != meta["store_generation"] or (
             not _same([row["store_generation"], row["intent_digest"], row["record_id"], row["expected_revision"]],
                       [operation["store_generation"], intent[_INTENT_ID]["digest"], operation["record_id"], operation["expected_revision"]])
@@ -176,8 +200,8 @@ def _read_operation(con, meta, *, operation_id=None, intent_digest=None):
     except (ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError, OverflowError):
         _fail("malformed_operation")
     try:
-        receipt = require_local_deck_application_receipt(_loads(row["receipt_json"]))
-        if not _same(receipt, _receipt(operation, receipt["application_result"])) or not _same(
+        receipt = owners["receipt_verifier"](_loads(row["receipt_json"]))
+        if not _same(receipt, owners["receipt_builder"](operation, receipt["application_result"])) or not _same(
             receipt["application_result"]["source_local_deck_application_intent"], operation["source_intent"]
         ):
             raise ValueError("receipt does not match operation")
@@ -198,23 +222,27 @@ def prepare_local_deck_application(intent: dict, *, store_path) -> dict:
     even if since committed. The handle is not a current lifecycle observation.
     New registration requires the exact live destination still to match #6N.
     """
-    verified = _intent(intent)  # Before IO.
+    return _prepare(intent, store_path=store_path, owners=_v1_owners())
+
+
+def _prepare(intent, *, store_path, owners):
+    verified = owners["intent"](intent)  # Before IO.
     with store._connection(store_path, write=True, mutation=True) as con:
         meta = _store(con, verified)
-        existing = _read_operation(con, meta, intent_digest=verified[_INTENT_ID]["digest"])
+        existing = owners["reader"](con, meta, intent_digest=verified[_INTENT_ID]["digest"])
         if existing is not None:
             _match_intent(existing, verified)
             operation = existing["operation"]
         else:
             store._current_for_mutation(con, store.require_destination_state(verified["source_destination_state"]))
-            operation = _operation(verified, str(uuid4()))
-            if _read_operation(con, meta, operation_id=operation["operation_id"]) is not None:
+            operation = owners["operation_builder"](verified, str(uuid4()))
+            if owners["reader"](con, meta, operation_id=operation["operation_id"]) is not None:
                 _fail("operation_binding_conflict")
             con.execute("INSERT INTO managed_application_operations VALUES (?,?,?,?,?,?,'prepared',NULL)", (
                 operation["operation_id"], operation["store_generation"], verified[_INTENT_ID]["digest"],
                 operation["record_id"], operation["expected_revision"], _encoded(verified).decode("utf-8"),
             ))
-            observed = _read_operation(con, meta, operation_id=operation["operation_id"])
+            observed = owners["reader"](con, meta, operation_id=operation["operation_id"])
             if observed is None or observed["state"] != "prepared" or not _same(observed["operation"], operation):
                 _fail("operation_binding_conflict")
     return operation
@@ -227,14 +255,18 @@ def execute_prepared_local_deck_application(operation: dict, *, store_path,
     Lock order: authority -> managed-store BEGIN IMMEDIATE. No nested public
     executor, automatic retry or historical-success shortcut is used.
     """
-    operation = _require_operation(operation)  # Includes owning #6N verification before IO.
+    return _execute_prepared(operation, store_path=store_path, validation_authority=validation_authority, owners=_v1_owners())
+
+
+def _execute_prepared(operation, *, store_path, validation_authority, owners):
+    operation = owners["operation_verifier"](operation)  # Includes owning #6N verification before IO.
     verified = operation["source_intent"]
     if type(validation_authority) is not LocalExecutionValidationAuthorityV1:
         raise LocalDeckApplicationError("invalid_execution_context")
     with validation_authority._guarded() as view:
         with store._connection(store_path, write=True, mutation=True) as con:
             meta = _store(con, verified)
-            existing = _read_operation(con, meta, operation_id=operation["operation_id"])
+            existing = owners["reader"](con, meta, operation_id=operation["operation_id"])
             if existing is None:
                 _fail("operation_not_found")
             if not _same(existing["operation"], operation):
@@ -248,22 +280,22 @@ def execute_prepared_local_deck_application(operation: dict, *, store_path,
             revision = store._next_revision(current)
             replacement = application._reconstruct(verified, current)
             try:
-                evidence = application.build_pre_execution_revalidation(
+                evidence = owners["revalidation_builder"](
                     verified["source_pre_execution_revalidation"]["source_human_proposal_decision"],
                     current["deck"], view["con"], format=view["format"], rules=view["rules"],
                     mode=view["mode"], collection=view["collection"], inventory=view["inventory"],
                 )
             except (ValueError, TypeError, KeyError, AttributeError, IndexError, RecursionError, OverflowError):
                 raise LocalDeckApplicationError("validation_unavailable") from None
-            fresh = application._fresh(evidence, verified)
+            fresh = owners["fresh_verifier"](evidence, verified)
             resulting = store._replace_in_transaction(con, meta, current, replacement, current["metadata"], revision)
             try:
-                result = application.require_local_deck_application_result(
-                    application._result(verified, current, fresh, view["context"], resulting))
+                result = owners["result_verifier"](
+                    owners["result_builder"](verified, current, fresh, view["context"], resulting))
             except ValueError:
                 raise store.ManagedDeckStoreError("result_mismatch") from None
             try:
-                receipt = require_local_deck_application_receipt(_receipt(operation, result))
+                receipt = owners["receipt_verifier"](owners["receipt_builder"](operation, result))
             except ValueError:
                 _fail("receipt_mismatch")
             changed = con.execute(
@@ -273,7 +305,7 @@ def execute_prepared_local_deck_application(operation: dict, *, store_path,
             )
             if changed.rowcount != 1:
                 _fail("operation_state_conflict")
-            observed = _read_operation(con, meta, operation_id=operation["operation_id"])
+            observed = owners["reader"](con, meta, operation_id=operation["operation_id"])
             if observed is None or observed["state"] != "committed" or not _same(observed["operation"], operation) or (
                 not _same(observed["receipt"], receipt)
             ):
@@ -288,21 +320,48 @@ def recover_local_deck_application(intent: dict, *, store_path) -> dict:
     Prepared/not_found are not permission to retry or proof of no future commit.
     Do not read current deck contents: later changes/deletion preserve receipts.
     """
-    verified = _intent(intent)
+    return _recover(intent, store_path=store_path, owners=_v1_owners())
+
+
+def _recover(intent, *, store_path, owners):
+    verified = owners["intent"](intent)
     with store._connection(store_path, write=True, mutation=True) as con:
         meta = _store(con, verified)
-        observed = _read_operation(con, meta, intent_digest=verified[_INTENT_ID]["digest"])
+        observed = owners["reader"](con, meta, intent_digest=verified[_INTENT_ID]["digest"])
         if observed is not None:
             _match_intent(observed, verified)
         status = "not_found" if observed is None else observed["state"]
         result = {
-            "local_deck_application_recovery_model_version": "1", "status": status,
+            "local_deck_application_recovery_model_version": owners["model_version"], "status": status,
             "reason": {"not_found": "no_registration_observed", "prepared": "no_committed_receipt_observed",
                        "committed": "matching_durable_receipt_observed"}[status],
             "store_id": meta["store_id"], "store_generation": meta["store_generation"],
             "source_intent_identity": deepcopy(verified[_INTENT_ID]),
             "operation": None if observed is None else observed["operation"],
             "receipt": None if observed is None else observed["receipt"],
-            "limitations": deepcopy(_RECOVERY_LIMITATIONS),
+            "limitations": deepcopy(owners["recovery_limitations"]()),
         }
     return result
+
+
+def _v1_owners():
+    """Trusted Model 1 expectation; late adapters preserve existing patch points.
+
+    No stored discriminator selects an owner. Each attribute is resolved only
+    when the shared engine reaches its original verification/call boundary.
+    """
+    return {
+        "model_version": "1",
+        "intent": lambda value: _intent(value),
+        "intent_verifier": lambda value: require_local_deck_application_intent(value),
+        "operation_builder": lambda *args: _operation(*args),
+        "operation_verifier": lambda value: _require_operation(value),
+        "receipt_builder": lambda *args: _receipt(*args),
+        "receipt_verifier": lambda value: require_local_deck_application_receipt(value),
+        "reader": lambda *args, **kwargs: _read_operation(*args, **kwargs),
+        "revalidation_builder": lambda *args, **kwargs: application.build_pre_execution_revalidation(*args, **kwargs),
+        "fresh_verifier": lambda *args: application._fresh(*args),
+        "result_builder": lambda *args: application._result(*args),
+        "result_verifier": lambda value: application.require_local_deck_application_result(value),
+        "recovery_limitations": lambda: _RECOVERY_LIMITATIONS,
+    }
