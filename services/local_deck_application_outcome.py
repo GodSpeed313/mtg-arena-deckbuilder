@@ -13,7 +13,9 @@ from uuid import UUID, uuid4
 
 from mtgadb import managed_deck_store as store
 from services import local_deck_application as application
-from services.local_deck_application_intent import require_local_deck_application_intent
+from services.local_deck_application_intent import (
+    require_local_deck_application_intent, require_local_deck_application_intent_v2,
+)
 from services.local_execution_validation import (
     LocalDeckApplicationError, LocalExecutionValidationAuthorityV1, _encoded,
 )
@@ -364,4 +366,77 @@ def _v1_owners():
         "result_builder": lambda *args: application._result(*args),
         "result_verifier": lambda value: application.require_local_deck_application_result(value),
         "recovery_limitations": lambda: _RECOVERY_LIMITATIONS,
+    }
+
+
+_V2_LIMITATIONS = [*_LIMITATIONS,
+    "Scoped evidence is historical digest-bound provenance; durable execution does not rerun analysis or establish that the scoped need was resolved or improved.",
+    "Decision 2 is not destination-bound, is not globally consumed, and is not globally single-use. Intent 2 selects one destination for this application; another explicitly requested matching destination may succeed.",
+    "This separate Model 2 durable receipt does not change #6T's receipt-free application or its nested Intent/Result 2 contracts. An embedded Result 2 alone remains a non-durable acknowledgment; receipt-free writes are not retroactively recoverable here.",
+]
+_V2_RECOVERY_LIMITATIONS = [*_V2_LIMITATIONS,
+    "Prepared and not_found are observations at this transaction boundary, not terminal cancellation, proof of no future execution, or permission to retry automatically.",
+]
+
+
+def _intent_v2(value):
+    return _verify_intent(value, lambda artifact: require_local_deck_application_intent_v2(artifact))
+
+
+def _operation_v2(intent, operation_id):
+    return _build_operation(intent, operation_id, model_version="2")
+
+
+def _require_operation_v2(value):
+    return _verify_operation(value, _v2_owners())
+
+
+def _receipt_v2(operation, result):
+    return _build_receipt(operation, result, model_version="2", limitations=_V2_LIMITATIONS)
+
+
+def require_local_deck_application_receipt_v2(value: dict) -> dict:
+    """Verify strict Receipt 2 historical consistency, not proof of persistence."""
+    return _verify_receipt(value, _v2_owners())
+
+
+def _read_operation_v2(con, meta, *, operation_id=None, intent_digest=None):
+    """Caller-selected Model 2 expectation; stored models never choose owners."""
+    return _read_expected_operation(con, meta, operation_id=operation_id,
+                                    intent_digest=intent_digest, owners=_v2_owners())
+
+
+def prepare_local_deck_application_v2(intent: dict, *, store_path) -> dict:
+    """Register Intent 2 only; do not validate resources or mutate the deck."""
+    return _prepare(intent, store_path=store_path, owners=_v2_owners())
+
+
+def execute_prepared_local_deck_application_v2(operation: dict, *, store_path,
+        validation_authority: LocalExecutionValidationAuthorityV1) -> dict:
+    """Atomically commit the exact scoped add and Receipt 2 in one writer transaction."""
+    return _execute_prepared(operation, store_path=store_path,
+                             validation_authority=validation_authority, owners=_v2_owners())
+
+
+def recover_local_deck_application_v2(intent: dict, *, store_path) -> dict:
+    """Observe verified Model 2 durable state; no execution, revalidation or retry."""
+    return _recover(intent, store_path=store_path, owners=_v2_owners())
+
+
+def _v2_owners():
+    """Trusted Model 2 expectation, independent of all artifact discriminators."""
+    return {
+        "model_version": "2",
+        "intent": lambda value: _intent_v2(value),
+        "intent_verifier": lambda value: require_local_deck_application_intent_v2(value),
+        "operation_builder": lambda *args: _operation_v2(*args),
+        "operation_verifier": lambda value: _require_operation_v2(value),
+        "receipt_builder": lambda *args: _receipt_v2(*args),
+        "receipt_verifier": lambda value: require_local_deck_application_receipt_v2(value),
+        "reader": lambda *args, **kwargs: _read_operation_v2(*args, **kwargs),
+        "revalidation_builder": lambda *args, **kwargs: application.build_pre_execution_revalidation_v2(*args, **kwargs),
+        "fresh_verifier": lambda *args: application._fresh_v2(*args),
+        "result_builder": lambda *args: application._result_v2(*args),
+        "result_verifier": lambda value: application.require_local_deck_application_result_v2(value),
+        "recovery_limitations": lambda: _V2_RECOVERY_LIMITATIONS,
     }

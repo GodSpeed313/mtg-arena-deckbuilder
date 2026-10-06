@@ -1977,3 +1977,73 @@ mixed storage. Its persisted reader must receive an explicit expected model from
 the calling authority and verify stored data against it; stored discriminators
 must not select an authority owner. Authority may fork by model version;
 mutation mechanics must remain shared.
+
+
+## #6U - Durable scoped execution (Model 2)
+
+The separate durable chain is `Intent 2 -> Operation 2 -> Prepared Execution 2 ->
+Receipt 2 -> Recovery 2`, in `services.local_deck_application_outcome`:
+
+- `prepare_local_deck_application_v2(intent, store_path=...)` registers an exact
+  verified Intent 2 and returns its immutable Operation 2 handle. Matching repeat
+  preparation returns the same handle, even after commit. New preparation requires
+  the captured destination still to match. It does not reserve the destination,
+  consume approval, validate live resources, or mutate the deck.
+- `execute_prepared_local_deck_application_v2(operation, store_path=...,
+  validation_authority=...)` verifies the operation before IO, then checks its
+  persisted registration and current destination under the authority guard and
+  writer transaction. It reruns Revalidation 2 and verifies fresh exact-action,
+  baseline/result, policy, and no-spend evidence before replacement. Result 2 and
+  Receipt 2 are verified, the operation/receipt is persisted and reread, and deck
+  replacement plus receipt/state commit atomically before releasing the guard.
+- `require_local_deck_application_receipt_v2(receipt)` verifies historical internal
+  consistency only. A supplied receipt is not proof of persistence, authentication,
+  store continuity, or current destination contents.
+- `recover_local_deck_application_v2(intent, store_path=...)` observes verified
+  `not_found`, `prepared`, or `committed` state under a writer barrier. It performs
+  no live revalidation, deck-content inference, execution, logical mutation, or
+  automatic retry. Malformed/cross-model rows, wrong stores/generations, and storage
+  failures are errors, never inferred absence or success.
+
+The existing schema 2 is unchanged. Canonical intent JSON carries its own model;
+committed receipt JSON additionally carries the receipt model in its hashed payload.
+Operation handles are reconstructed from verified intents and reconciled with row
+bindings. Fixed v1/v2 APIs select their expected owners through trusted code; stored
+model/version values never select a verifier. Opposite-model rows fail closed.
+Global operation UUID uniqueness and `(store_generation, intent_digest)` uniqueness
+are unchanged. Intent models are separated by model values in canonical identity
+payloads. Shared destination/revision fields do not reserve a mutation for one model.
+
+One shared durable engine serves fixed v1/v2 wrappers. Model 1 signatures, canonical
+contracts, failure ordering, late callable/monkeypatch behavior, and observation
+semantics remain unchanged. Model 1 continues to reject Model 2 authority. The closed
+#6T non-durable engine and upstream decision/presentation/revalidation/intent contracts
+are unchanged. Schema 1 still requires the existing explicit migration to schema 2;
+there is no #6U schema version or data migration.
+
+The #6T section describes its receipt-free API and interim capability boundary.
+That API remains receipt-free. The separate #6U prepared executor returns Receipt 2;
+its embedded Result 2 alone is still a non-durable acknowledgment. Durable recovery
+never backfills a receipt for a non-durable write. If such a write or a competing
+v1/v2 durable execution changes the destination first, a pending stale operation
+fails revision/baseline checks without another mutation or receipt, and remains
+`prepared`. No terminal failure state or automatic retry is manufactured.
+
+An execution failure before commit rolls back both deck replacement and receipt/state
+changes. Process interruption before execution commit leaves the existing registration
+prepared; after commit it is recoverably committed. A commit error or lost response
+must not be interpreted as success or non-application: recovery observes the durable
+state. `prepared`/`not_found` are observations, not cancellation, proof of no future
+commit, or permission to retry. SQLite/store continuity and nonparticipating-writer
+limitations remain in force; hashes do not authenticate coherent external rewrites.
+
+Scoped evidence remains historical digest-bound provenance. Durable execution does
+not rerun analysis or establish that a scoped need improved or resolved. Decision 2
+is not destination-bound or globally consumed/single-use; another explicit request
+against a matching destination may succeed. No spending, aggregation, retargeting,
+human abstention, approval consumption/revocation, or Arena IO is introduced.
+
+The #6T carry-forwards are intentionally unchanged: Revalidation 2 still uses its
+fail-safe existing diagnostic classification; #6U introduces no additional string-based
+classification or #6S exception contract. The exported revalidation version constant
+is retained for compatibility without cosmetic cleanup.
