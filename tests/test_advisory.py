@@ -404,7 +404,7 @@ class AdvisoryTests(unittest.TestCase):
 
     def delete_review(self):
         key = self.request["key"]
-        self.store.delete_review(key, confirmation=self.store.mutation_preview(key)["confirmation_digest"])
+        self.store.delete_review(key, confirmation=self.store.mutation_preview(key, operation="delete_review")["confirmation_digest"])
 
     def attest(self):
         self.location_evidence["missing"] = ["HKCU\\Accounts\\Personal"]
@@ -549,7 +549,7 @@ class AdvisoryTests(unittest.TestCase):
         pending = self.store.begin(self.request['key'], self.coordinator.preview(self.request))
         failed = self.store.begin(self.request['key'], self.coordinator.preview(self.request))
         self.store.finish(failed, 'failed')
-        preview = self.store.mutation_preview(self.request['key'])
+        preview = self.store.mutation_preview(self.request['key'], operation='delete_review')
         (folder / 'review.json').write_bytes(b'bad')
         with self.assertRaises(contract.AdvisoryError):
             self.store.delete_review(self.request['key'], confirmation=preview['confirmation_digest'])
@@ -585,7 +585,7 @@ class AdvisoryTests(unittest.TestCase):
     def test_confirmed_verdict_requires_current_valid_review(self):
         self.run_review()
         key = self.request['key']
-        preview = self.store.mutation_preview(key)
+        preview = self.store.mutation_preview(key, operation='verdict', verdict='accepted')
         self.store.confirm_verdict(key, 'accepted', confirmation=preview['confirmation_digest'])
         self.assertEqual(self.coordinator.run(self.request)['operator_verdict'], 'accepted')
         with self.assertRaises(contract.AdvisoryError):
@@ -641,11 +641,11 @@ class AdvisoryTests(unittest.TestCase):
         key = self.request['key']
         calls = self.provider.calls
         with patch.object(cli, 'AdvisoryStore', return_value=self.store), patch.object(cli, 'FakeProvider', side_effect=AssertionError('provider')), patch('sys.stdin.isatty', return_value=True), redirect_stdout(io.StringIO()):
-            preview = self.store.mutation_preview(key)
+            preview = self.store.mutation_preview(key, operation='verdict', verdict='accepted')
             with patch('builtins.input', return_value='ACCEPTED ' + key + ' ' + preview['confirmation_digest']):
                 self.assertEqual(cli.main(['cache','verdict','--key',key,'--value','accepted']), 0)
             self.assertEqual(self.coordinator.run(self.request)['operator_verdict'], 'accepted')
-            preview = self.store.mutation_preview(key)
+            preview = self.store.mutation_preview(key, operation='delete_review')
             with patch('builtins.input', return_value='DELETE REVIEW ' + key + ' ' + preview['confirmation_digest']):
                 self.assertEqual(cli.main(['cache','delete-review','--key',key]), 0)
             self.location_evidence['missing'] = ['account']
@@ -658,6 +658,83 @@ class AdvisoryTests(unittest.TestCase):
             with patch('builtins.input', return_value='REVOKE ' + record['id'] + ' ' + preview['confirmation_digest']):
                 self.assertEqual(cli.main(['location','revoke','--attestation-id',record['id']]), 0)
         self.assertEqual(self.provider.calls, calls)
+
+    def test_mutation_confirmations_cannot_cross_operations_or_verdicts(self):
+        self.run_review()
+        key = self.request['key']
+        accepted = self.store.mutation_preview(key, operation='verdict', verdict='accepted')
+        rejected = self.store.mutation_preview(key, operation='verdict', verdict='rejected')
+        deletion = self.store.mutation_preview(key, operation='delete_review')
+        self.assertNotIn('remove_only', accepted)
+        self.assertNotIn('remove_only', rejected)
+        self.assertIn('operator verdict', accepted['description'])
+        self.assertEqual(len({p['confirmation_digest'] for p in (accepted, rejected, deletion)}), 3)
+        before = self.files()
+        mutations = [
+            lambda: self.store.delete_review(key, confirmation=accepted['confirmation_digest']),
+            lambda: self.store.confirm_verdict(key, 'accepted', confirmation=deletion['confirmation_digest']),
+            lambda: self.store.confirm_verdict(key, 'rejected', confirmation=accepted['confirmation_digest']),
+            lambda: self.store.confirm_verdict(key, 'accepted', confirmation=rejected['confirmation_digest'])]
+        for mutate in mutations:
+            with self.assertRaisesRegex(contract.AdvisoryError, 'confirmation_required'): mutate()
+            self.assertEqual(before, self.files())
+
+    def test_correct_mutation_bindings_and_stale_confirmation(self):
+        self.run_review()
+        key = self.request['key']
+        for verdict in ('accepted', 'rejected'):
+            preview = self.store.mutation_preview(key, operation='verdict', verdict=verdict)
+            self.store.confirm_verdict(key, verdict, confirmation=preview['confirmation_digest'])
+            self.assertEqual(self.coordinator.run(self.request)['operator_verdict'], verdict)
+        preview = self.store.mutation_preview(key, operation='verdict', verdict='accepted')
+        self.store.begin(key, self.coordinator.preview(self.request))
+        before = self.files()
+        with self.assertRaisesRegex(contract.AdvisoryError, 'confirmation_required'):
+            self.store.confirm_verdict(key, 'accepted', confirmation=preview['confirmation_digest'])
+        self.assertEqual(before, self.files())
+        self.delete_review()
+        self.assertIsNone(self.store.cached(self.request))
+
+    def test_missing_mutation_confirmation_and_provider_isolation(self):
+        self.run_review()
+        key = self.request['key']
+        before = self.files()
+        for token in (None, 'declined'):
+            with self.assertRaises(contract.AdvisoryError): self.store.delete_review(key, confirmation=token)
+            with self.assertRaises(contract.AdvisoryError): self.store.confirm_verdict(key, 'accepted', confirmation=token)
+        self.assertEqual(before, self.files())
+        mutation = self.store.mutation_preview(key, operation='delete_review')
+        self.store.delete_review(key, confirmation=mutation['confirmation_digest'])
+        calls = self.provider.calls
+        # A valid mutation token is not a coordinator-issued provider preview.
+        for p in (mutation, {**mutation, 'preview_id': mutation['confirmation_digest']}):
+            self.assertEqual(self.coordinator.run(self.request, preview=p, authorize=True)['state'], 'unavailable')
+        self.assertEqual(calls, self.provider.calls)
+
+    def test_inspection_distinguishes_checksum_failure_without_provider(self):
+        self.run_review()
+        path = self.store.root / self.request['key'] / 'review.json'
+        saved = json.loads(path.read_bytes())
+        saved['entry']['completed_at_utc'] = 'changed-but-well-formed-json'
+        self.assertNotEqual(saved['checksum'], contract.digest(saved['entry']))
+        path.write_bytes(contract.encoded(saved))
+        before = self.files()
+        with patch('services.advisory.FakeProvider', side_effect=AssertionError('constructed')), patch.object(self.provider, 'review', side_effect=AssertionError('called')):
+            result = self.store.inspection(self.request['key'])
+        self.assertEqual(result['review_state'], 'unusable')
+        self.assertEqual(result['error_code'], 'cache_integrity_failed')
+        self.assertEqual(before, self.files())
+
+    def test_inspection_distinguishes_invalid_json_without_provider(self):
+        self.run_review()
+        (self.store.root / self.request['key'] / 'review.json').write_bytes(b'not JSON')
+        before = self.files()
+        with patch('services.advisory.FakeProvider', side_effect=AssertionError('constructed')), patch.object(self.provider, 'review', side_effect=AssertionError('called')):
+            result = self.store.inspection(self.request['key'])
+        self.assertEqual(result['review_state'], 'unusable')
+        self.assertEqual(result['error_code'], 'invalid_json')
+        self.assertTrue(issubclass(contract.AdvisoryError, ValueError))
+        self.assertEqual(before, self.files())
 
 
 if __name__ == "__main__":

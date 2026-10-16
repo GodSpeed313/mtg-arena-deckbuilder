@@ -250,3 +250,34 @@ The operator must inspect the evidence and explicitly confirm the designated
 path before using it when missing account metadata is present. All executable
 review paths remain fake-only. Phase 3 and real provider integration are outside
 this amendment.
+
+### Final correction: exact mutation authorization
+
+`mutation_preview(key, operation="verdict", verdict="accepted" or "rejected")`
+validates the review and describes verdict recording without a deletion list.
+`mutation_preview(key, operation="delete_review")` describes only verdict-first
+review deletion. The existing canonical JSON digest now includes the operation
+and exact verdict value alongside key, review/verdict byte hashes and attempt
+history. Callers must specify the operation; the former shared preview is no
+longer a mutation authority. `confirm_verdict` and `delete_review` reconstruct
+the exact intended preview immediately before mutation under the existing gate.
+Cross-operation, cross-verdict, missing and stale confirmations cannot mutate.
+These confirmations do not authorize provider dispatch.
+
+Corrupted-cache inspection distinguishes well-formed JSON with a failed checksum
+(`cache_integrity_failed`) from unparseable JSON (`invalid_json`). Only the latter
+code was added to the operational allowlist. Parsing, checksum algorithms,
+`AdvisoryError(ValueError)`, I/O blocking and strict review validation are unchanged.
+No automatic repair or retry is performed.
+
+Correction verification: `python -B -m unittest tests.test_advisory -q` passed
+54 tests (21.782s); `python -B -m unittest discover -q` passed 963 tests (230.151s);
+`python -B test_mtgadb.py` passed 50/50. Each command ran once for this correction;
+no test run failed or was interrupted. SQLite immutable read-only integrity was
+`ok`, foreign-key violations were absent and the canonical database SHA-256
+remained `9f8761632230a93f58aa47d77d120cda2c5be76354d787045202ed0e01e7f3ef`.
+All 404 historical integrity entries matched: 87 audit, 115 other repository,
+one database and 201 external frozen files. No real-provider request, paid call,
+real-profile attestation or change to location policy occurred. Fake execution
+was confined to automated tests. Independent inspection of the correction patch
+is required before any further operational authorization.

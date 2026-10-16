@@ -61,7 +61,8 @@ def management(argv):
     elif args.action == "attempts":
         display({"attempts": store.attempts(args.key)})
     else:
-        preview = store.mutation_preview(args.key)
+        preview = store.mutation_preview(args.key, operation="verdict" if args.action == "verdict" else "delete_review",
+                                         verdict=args.value if args.action == "verdict" else None)
         display(preview)
         if args.action == "verdict":
             display(store.show(args.key))  # Must validate before asking for verdict.

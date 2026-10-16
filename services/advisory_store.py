@@ -207,7 +207,15 @@ class AdvisoryStore:
         return {"review": cached["review"], "validation": cached["validation"],
                 "operator_verdict": cached["operator_verdict"], "thinking": cached["thinking"]}
 
-    def mutation_preview(self, key):
+    def mutation_preview(self, key, *, operation, verdict=None):
+        if operation not in ("verdict", "delete_review"):
+            raise AdvisoryError("confirmation_required")
+        if operation == "verdict":
+            if verdict not in ("accepted", "rejected"):
+                raise AdvisoryError("operator_verdict_required")
+            self.show(key)  # Verdict confirmation is available only for a validated review.
+        elif verdict is not None:
+            raise AdvisoryError("confirmation_required")
         folder = self._path(key)
         hashes = {}
         for name in ("verdict.json", "review.json"):
@@ -217,16 +225,21 @@ class AdvisoryStore:
                 hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
             except FileNotFoundError:
                 hashes[name] = None
-        value = {"key": key, "remove_only": ["verdict.json", "review.json"],
-                 "preserve": "attempts, diagnostics, unrelated files and key directory",
+        value = {"key": key, "operation": operation, "verdict": verdict,
                  "hashes": hashes, "attempts": self.attempts(key)}
+        if operation == "verdict":
+            value["description"] = "Record the explicit operator verdict; evidence validation stays separate."
+        else:
+            value.update(description="Delete only the verdict and review, in that order.",
+                         remove_only=["verdict.json", "review.json"],
+                         preserve="attempts, diagnostics, unrelated files and key directory")
         return {**value, "confirmation_digest": digest(value)}
 
     def confirm_verdict(self, key, verdict, *, confirmation=None):
         if not GATE.acquire(blocking=False):
             raise AdvisoryError("busy")
         try:
-            fresh = self.mutation_preview(key)
+            fresh = self.mutation_preview(key, operation="verdict", verdict=verdict)
             if confirmation != fresh["confirmation_digest"]:
                 raise AdvisoryError("confirmation_required")
             saved = self._read(self._path(key) / "review.json")
@@ -254,7 +267,7 @@ class AdvisoryStore:
         if not GATE.acquire(blocking=False):
             raise AdvisoryError("busy")
         try:
-            fresh = self.mutation_preview(key)
+            fresh = self.mutation_preview(key, operation="delete_review")
             if confirmation != fresh["confirmation_digest"]:
                 raise AdvisoryError("confirmation_required")
             folder = self._path(key)

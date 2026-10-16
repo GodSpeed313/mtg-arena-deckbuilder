@@ -11,7 +11,7 @@ invalid_cache_key cache_integrity_failed cache_validation_failed cache_incomplet
 verdict_integrity_failed operator_verdict_required validated_review_required explicit_deletion_required
 delete_deprecated review_orphan_verdict attempt_history_unreadable busy real_provider_disabled
 explicit_authorization_required preview_consent_mismatch uncertain_attempt_acknowledgment_required
-credential_contamination invalid_response evidence_validation""".split())
+credential_contamination invalid_response evidence_validation invalid_json""".split())
 
 
 def error_code(error):
