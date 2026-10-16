@@ -1,5 +1,8 @@
 # Phases 0–2 implementation verification — 2026-10-14
 
+The following original Phase 0–2 record is retained as historical evidence.
+See the operational-readiness addendum at the end for the October 16 changes.
+
 ## Baseline recovery
 
 The interrupted retry's session could not be recovered (`Unknown process id`).
@@ -111,3 +114,89 @@ Single-process safeguards do not coordinate other processes or other clients.
 Canonical face/companion and captured legality/ownership limitations remain.
 No automatic upload, background refresh, executable swap, opportunity bridge,
 database migration, real API request, push, merge or Phase 3 work occurred.
+
+## Operational-readiness implementation addendum — 2026-10-16
+
+Authority: final consolidated operational-readiness authorization; amendment
+SHA-256 `040fb72751b194dd92ee3488f30dc1ec926a789a4d4423c251c2158d6f97352c`.
+The complete amendment was read and its hash verified before edits. Required
+branch `feature/hybrid-advisory-phase-0-2`, starting HEAD
+`8ea935b2fe2fb80cce50f1fe090235cc0d9de2c8`, root and tracked-clean condition all
+matched. Existing `?? audit/` was preserved. No fetch or branch change occurred.
+
+Implemented narrowly scoped missing-UserFolder attestation, strict local control
+records, exact evidence invalidation, revocation followed by fresh attestation,
+safe cache inspection, verdict-first review deletion, orphan-verdict recovery,
+deprecated non-mutating broad deletion, conservative malformed-history handling,
+and optional management CLI commands. Two small helpers isolate Windows location
+authority and the shared gate/error allowlist. Model-facing contracts, prompt,
+schema, checker, gameplay identity and legacy workbench are unchanged.
+
+No replacement attestation, general policy override, deletion marker, recovery
+generation, cache-version-2, preview/consent-v2 recovery system, reset, history
+purge, live adapter or dependency framework was introduced. The existing local
+preview adds a history fingerprint to prevent consent reuse after history changes.
+
+### Focused test evidence
+
+Command for each focused run: `python -B -m unittest tests.test_advisory -q`.
+Runs passed 46 tests (7.573s), then 49 (8.581s), 49 (12.089s), and final 49
+(6.854s). Repetitions followed added adversarial coverage and path/gate fixes.
+No failed or interrupted test execution occurred in this amendment. Runs used
+normal Windows temporary-directory permissions; no sandbox-denied test run was
+attempted here. Prior Phase 0–2 sandbox failures above remain historical.
+
+Full regression command: `python -B -m unittest discover -q`. The first run
+passed **958 tests in 207.776s**. It was repeated after the lexical-path reparse
+safeguard and shared mutation gate were finalized. The final run passed
+**958 tests in 168.939s**, including all **49 advisory tests** (13 more than the
+accepted Phase 0–2 baseline). Neither full run failed or was interrupted.
+
+| Required test group | Implemented evidence |
+|---|---|
+| 1 Missing metadata | `test_location_only_missing_value_is_attestable`: value absence versus read/open/enumeration errors and invalid roots |
+| 2 Exact invalidation | `test_attestation_independent_storage_and_exact_invalidation`: additions/removals/same-count replacement, roots, profile, paths, view and policy |
+| 3 Unsafe paths | Existing reparse regression plus `test_attestation_does_not_override_unsafe_paths` and `test_control_file_reparse_and_late_evidence_change` |
+| 4 Independent control storage | Outside-cache control path, no startup creation, state-bound confirmation, corruption rejection |
+| 5 Attestation interruption/revocation | `test_changed_confirmation_and_interrupted_attestation`, `test_revocation_and_corrupt_record_fail_closed_preserve_cache` |
+| 6–8 Ordered/interrupted deletion and accepted review cycle | `test_review_delete_order_and_accepted_interruption_full_cycle`: accepted before deletion, cached_valid/not_reviewed after interruption with no provider call, repeated deletion, preserved history, fresh explicitly authorized publication not_reviewed |
+| 9 Orphan verdict | `test_orphan_verdict_recovery_no_authority`: no acceptance/dispatch, confirmed narrow removal |
+| 10 Charge uncertainty | `test_deletion_preserves_uncertainty_and_binds_state`, `test_unreadable_attempt_and_changed_history_block_dispatch`: malformed/pending/failed/unknown/interrupted evidence retained; fresh acknowledgment required |
+| 11 CLI safety | `test_management_cli_no_provider_and_safe_confirmation`, `test_cli_confirmed_management_and_location_lifecycle`, `test_confirmed_verdict_requires_current_valid_review` |
+| 12 Legacy/deprecation | Authorized update to `test_explicit_delete_not_automatic_invalidation` verifies fixed non-mutating error and preserves review/verdict/attempt/diagnostic bytes; legacy rendering test retained |
+
+All fake execution occurred only in isolated automated fixtures. No actual
+provider request, paid inference or standalone fake review experiment occurred.
+Management tests explicitly prohibit provider construction. No operator verdict
+or attestation was created against the real application cache.
+
+### Integrity inventory and operational limits
+
+The historical 404-member baseline was checked before edits and again after
+implementation, with zero mismatches. Its actual scope is **87 audit files,
+115 other repository files, one canonical database, and 201 external frozen
+files**. It predates the seven Phase 0–2 additions; it is not interchangeable
+with the 209-member repository/audit inventory at this starting HEAD.
+
+The starting tracked/untracked scope is **122 tracked files + 87 audit files =
+209**. Six existing tracked advisory files are intentionally modified; two
+helpers are newly added. The original 115 tracked files, unchanged advisory
+contract and 87 audit files remain unchanged. Final evidence exports record the
+actual changed-file list and per-member hashes. They exclude audit material.
+
+`python -B test_mtgadb.py`: **50/50 passed**. SQLite opened with
+`mode=ro&immutable=1`: integrity `ok`, no foreign-key violations, no journal/WAL/
+SHM sidecars. Database SHA-256 before/after remains
+`9f8761632230a93f58aa47d77d120cda2c5be76354d787045202ed0e01e7f3ef`.
+
+A read-only real-profile location probe succeeded: two missing UserFolder
+entries, three known-root provenance records, no existing attestation. This is
+not operator approval of those paths. Actual cache use still requires the
+operator's explicit path/evidence confirmation. No real profile/cache/control
+record or registry value was created or changed.
+
+Remaining limits: single-process coordination; no account-wide spending guarantee;
+attestation does not prove absence of every backup/synchronization agent; corrupt
+control records require separately reviewed recovery; deliberate external history
+erasure is not prevented. Independent patch inspection is the next authorization
+gate. No push, merge, Phase 3 or Next Recognition Pass is included.

@@ -137,8 +137,10 @@ requires a valid completed review and records a separate explicit operator
 assertion. It is not authentication, semantic certification or edit permission.
 `history(current_key)` labels other keys historical/stale. Nothing auto-refreshes
 or uploads. Reviews, summaries and invalid diagnostics remain until
-`delete(key, explicit_operator=True)` removes that key's local files. It does
-not erase independent backups/exports. Filesystem errors fail safely; the normal
+`delete_review(key, confirmation=preview_digest)` removes only the verdict and
+review, in that order. Attempts, diagnostics and the key directory remain.
+The former broad `delete()` API now returns `delete_deprecated` without mutation.
+Neither operation erases independent backups/exports. Filesystem errors fail safely; the normal
 offline workbench continues to be available separately.
 
 ## Engineering-owned acceptance rubric and evidence plan
@@ -178,3 +180,73 @@ companion semantics, current legality and inventory remain bounded by existing
 data. There are no schema migrations, production prompt experiments, strategic
 opportunity bridges, executable swaps, automatic deck applications or Phase 3
 work in this change.
+
+## Operational-readiness amendment (October 16, 2026)
+
+The final consolidated authorization supersedes the design's proposed deletion
+markers, recovery generations, cache-version-2 and replacement attestations.
+None of those mechanisms is implemented. Existing cache/input/request/checker
+versions, prompt and schema remain unchanged. Only the local preview gains a
+history fingerprint, so changed attempt bytes invalidate an outstanding consent.
+
+Location management uses a strict version-1 checksum envelope in the fixed
+`%LOCALAPPDATA%\MTGDeckbuilder\AdvisoryControl\location.json`, outside the cache.
+No startup or inspection creates this file. Its storage path is checked without
+consulting an attestation: absolute Local AppData containment, lexical-path
+symlink/reparse rejection and known sync-root exclusions remain unconditional.
+An attestation resolves only missing `UserFolder` values on successfully opened
+account keys. Failed enumeration, access denial, disappearing keys, invalid
+paths/values and known-folder mismatch cannot be attested away.
+
+The record binds profile SID, Local AppData, registry view, evidence-policy
+version, exact missing-key identities, known-root paths/provenance, designated
+cache and fixed control path. Every access checks the record and fresh evidence.
+Any change fails closed, including missing metadata becoming complete. Positive
+unsafe evidence always wins. The creation command rereads evidence after
+confirmation and again immediately before atomic publication. Active records
+must be explicitly revoked before fresh attestation; there is no `--replace`,
+automatic renewal or policy override. A corrupt control record fails closed and
+requires separately reviewed manual recovery; no automatic repair is supplied.
+
+```powershell
+python -B advisory_workbench.py location inspect --cache-root <absolute-path>
+python -B advisory_workbench.py location attest --cache-root <absolute-path>
+python -B advisory_workbench.py location revoke --attestation-id <id>
+python -B advisory_workbench.py cache status --key <sha256>
+python -B advisory_workbench.py cache show --key <sha256>
+python -B advisory_workbench.py cache attempts --key <sha256>
+python -B advisory_workbench.py cache verdict --key <sha256> --value accepted
+python -B advisory_workbench.py cache delete-review --key <sha256>
+```
+
+Management commands never instantiate a provider. Mutations require an
+interactive, exact phrase containing the displayed target and state digest;
+noninteractive/declined/interrupted confirmation makes no change. Revocation
+preserves all cache evidence. `cache status` distinguishes valid/unusable/absent
+reviews from evidence validity and operator verdict. `show` exposes only a
+validated review and separately labeled summaries, not raw error bodies.
+Unexpected exceptions yield a fixed generic code; allowlisted failures have
+specific structured codes. Neither inspection nor a cache miss triggers a retry.
+
+Review deletion previews the exact removal list, retained history and byte
+hashes. After confirmation it rechecks state under the existing in-process gate,
+unlinks `verdict.json` first, then `review.json`. Interrupting between those steps
+leaves a valid review with `not_reviewed` status; reuse makes no provider call.
+Repeating confirmed deletion completes the remaining removal. Orphan verdicts
+block dispatch and can be removed by this same narrow operation. Mismatched
+verdict checksums remain errors. No reset or attempt-history purge exists.
+
+Pending/failed/unknown/malformed attempt records are retained. Malformed readable
+records produce conservative synthetic uncertainty references bound to their
+byte hashes, never fabricated success. Unreadable or unstable history blocks
+dispatch. A later request requires fresh preview-bound consent and separate
+uncertain-charge acknowledgment; review deletion grants neither. A new review
+never inherits an old accepted verdict. Entire histories deliberately erased
+outside the application cannot be reconstructed; this is not a tamper-proof
+billing ledger or cross-process concurrency system.
+
+The implementation does not create an operator attestation on the real profile.
+The operator must inspect the evidence and explicitly confirm the designated
+path before using it when missing account metadata is present. All executable
+review paths remain fake-only. Phase 3 and real provider integration are outside
+this amendment.

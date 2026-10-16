@@ -6,64 +6,17 @@ import base64
 import hashlib
 from pathlib import Path
 import re
-import stat
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from services.advisory_contract import (AdvisoryError, CHECKER_VERSION, digest,
-                                       encoded, safe_bytes, strict_load, validate_review)
-
-
-def _location_evidence():
-    """Enumerate Windows known-folder and OneDrive roots; errors fail closed."""
-    if os.name != "nt":
-        raise AdvisoryError("cache_location_unestablished")
-    import winreg
-    roots = [v for k, v in os.environ.items() if k.lower().startswith("onedrive") and v]
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as key:
-            local = os.path.expandvars(winreg.QueryValueEx(key, "Local AppData")[0])
-        # Missing Accounts means no configured OneDrive accounts in this profile;
-        # access-denied and incomplete enumeration are NOT treated as absence.
-        try:
-            accounts = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\OneDrive\Accounts")
-        except FileNotFoundError:
-            accounts = None
-        if accounts is not None:
-            with accounts:
-                for i in range(winreg.QueryInfoKey(accounts)[0]):
-                    with winreg.OpenKey(accounts, winreg.EnumKey(accounts, i)) as account:
-                        roots.append(winreg.QueryValueEx(account, "UserFolder")[0])
-    except OSError:
-        raise AdvisoryError("cache_location_unestablished") from None
-    env_local = os.environ.get("LOCALAPPDATA")
-    if not env_local or Path(env_local).resolve() != Path(local).resolve():
-        raise AdvisoryError("cache_location_unestablished")
-    return Path(local), [Path(p) for p in roots]
+                                       encoded, safe_bytes, strict_load, validate_review, require_request)
+from services import advisory_location
+from services.advisory_operations import GATE, error_code
 
 
 def safe_root(path=None):
-    local, synced = _location_evidence()
-    root = Path(path) if path is not None else local / "MTGDeckbuilder" / "AdvisoryCache"
-    if not local.is_absolute() or not root.is_absolute():
-        raise AdvisoryError("cache_location_unestablished")
-    # Fail on junctions, symlinks and other reparse points, including ancestors.
-    for p in (root, *root.parents):
-        if p.exists() or p.is_symlink():
-            st = p.lstat()
-            if p.is_symlink() or getattr(st, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-                raise AdvisoryError("cache_redirected")
-    resolved = root.resolve()
-    if not resolved.is_relative_to(local.resolve()) or resolved == local.resolve():
-        raise AdvisoryError("cache_outside_application_data")
-    if any(not p.is_absolute() for p in synced):
-        raise AdvisoryError("cache_location_unestablished")
-    if any(resolved.is_relative_to(p.resolve()) or p.resolve().is_relative_to(resolved) for p in synced):
-        raise AdvisoryError("cache_synced")
-    if any(part.casefold().startswith("onedrive") for part in resolved.parts):
-        raise AdvisoryError("cache_synced")
-    return resolved
+    return advisory_location.admit(path)
 
 
 def key_check(key):
@@ -73,7 +26,7 @@ def key_check(key):
 
 class AdvisoryStore:
     def __init__(self, root=None):
-        self.root = safe_root(root)  # Constructor never creates a directory.
+        self.root = advisory_location.admit(root, store_root=True)  # Never creates a directory.
 
     def _path(self, key):
         key_check(key)
@@ -104,7 +57,45 @@ class AdvisoryStore:
         return strict_load(path.read_bytes())
 
     def attempts(self, key):
-        return [self._read(p) for p in sorted(self._path(key).glob("attempt-*.json"))]
+        result = []
+        try:
+            folder = self._path(key)
+            names = sorted(p for p in folder.iterdir() if p.name.startswith("attempt-") and p.suffix == ".json") if folder.exists() else []
+            for p in names:
+                safe_root(p)
+                raw = p.read_bytes()
+                fingerprint = hashlib.sha256(raw).hexdigest()
+                try:
+                    a = strict_load(raw)
+                    if (type(a) is not dict or a.get("key") != key or
+                            type(a.get("attempt_id")) is not str or
+                            not re.fullmatch(r"[a-f0-9]{32}", a["attempt_id"]) or
+                            p.name != "attempt-" + a["attempt_id"] + ".json" or
+                            a.get("state") not in ("pending", "complete", "failed")):
+                        raise ValueError
+                    required = {"attempt_id", "key", "state", "started_at_utc", "preview_id", "approved_cap_usd", "charge"}
+                    if a["state"] != "pending":
+                        required.add("finished_at_utc")
+                    if set(a) != required or a["charge"] != "uncertain_if_interrupted":
+                        raise ValueError
+                    if type(a["approved_cap_usd"]) is not str or not re.fullmatch(r"[0-9]+\.[0-9]{2}", a["approved_cap_usd"]):
+                        raise ValueError
+                    datetime.fromisoformat(a["started_at_utc"])
+                    if "finished_at_utc" in a:
+                        datetime.fromisoformat(a["finished_at_utc"])
+                    # Only known fields leave this reader; provider bodies never do.
+                    result.append({"attempt_id": a["attempt_id"], "state": a["state"],
+                                   "started_at_utc": a["started_at_utc"], "approved_cap_usd": a["approved_cap_usd"],
+                                   "fingerprint": fingerprint})
+                except (ValueError, KeyError, TypeError):
+                    result.append({"attempt_id": "unknown-" + digest([p.name, fingerprint]),
+                                   "state": "unknown", "fingerprint": fingerprint})
+            after = sorted(p for p in folder.iterdir() if p.name.startswith("attempt-") and p.suffix == ".json") if folder.exists() else []
+            if names != after:
+                raise OSError
+            return result
+        except OSError:
+            raise AdvisoryError("attempt_history_unreadable") from None
 
     def begin(self, key, preview):
         attempt = {"attempt_id": uuid4().hex, "key": key, "state": "pending",
@@ -138,8 +129,11 @@ class AdvisoryStore:
         self._write(self._path(request["key"]) / "review.json", {"entry": entry, "checksum": digest(entry)})
 
     def cached(self, request):
+        request = require_request(request)
         path = self._path(request["key"]) / "review.json"
         if not path.exists():
+            if (path.parent / "verdict.json").exists():
+                raise AdvisoryError("review_orphan_verdict")
             return None
         try:
             saved = self._read(path)
@@ -158,6 +152,8 @@ class AdvisoryStore:
             return {**entry, "validation": validation, "thinking": [b for b in response["content"] if b["type"] != "text"],
                     "operator_verdict": self.verdict(request["key"], saved["checksum"])
                     if entry["checker_version"] == CHECKER_VERSION else "not_reviewed"}
+        except AdvisoryError:
+            raise
         except (KeyError, TypeError, ValueError):
             raise AdvisoryError("cache_integrity_failed") from None
 
@@ -181,6 +177,66 @@ class AdvisoryStore:
                     {"entry_checksum": saved["checksum"], "verdict": verdict,
                      "source": "explicit_operator_assertion_not_authentication"})
 
+    def inspection(self, key):
+        folder = self._path(key)
+        attempts = self.attempts(key)
+        result = {"inspection_version": "1", "key": key, "review_state": "absent",
+                  "evidence_status": "unknown", "operator_verdict": "not_reviewed",
+                  "attempts": attempts, "uncertain_charge_required": any(a["state"] != "complete" for a in attempts)}
+        try:
+            if (folder / "review.json").exists():
+                entry = self._read(folder / "review.json")["entry"]
+                request = require_request(entry["request"])
+                if request["key"] != key:
+                    raise AdvisoryError("cache_integrity_failed")
+                cached = self.cached(request)
+                result.update(review_state="valid", evidence_status="valid",
+                              operator_verdict=cached["operator_verdict"])
+            elif (folder / "verdict.json").exists():
+                raise AdvisoryError("review_orphan_verdict")
+        except (ValueError, KeyError, TypeError) as error:
+            result.update(review_state="unusable", error_code=error_code(error))
+        return result
+
+    def show(self, key):
+        saved = self._read(self._path(key) / "review.json")
+        request = require_request(saved["entry"]["request"])
+        if request["key"] != key:
+            raise AdvisoryError("cache_integrity_failed")
+        cached = self.cached(request)
+        return {"review": cached["review"], "validation": cached["validation"],
+                "operator_verdict": cached["operator_verdict"], "thinking": cached["thinking"]}
+
+    def mutation_preview(self, key):
+        folder = self._path(key)
+        hashes = {}
+        for name in ("verdict.json", "review.json"):
+            path = folder / name
+            safe_root(path)
+            try:
+                hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            except FileNotFoundError:
+                hashes[name] = None
+        value = {"key": key, "remove_only": ["verdict.json", "review.json"],
+                 "preserve": "attempts, diagnostics, unrelated files and key directory",
+                 "hashes": hashes, "attempts": self.attempts(key)}
+        return {**value, "confirmation_digest": digest(value)}
+
+    def confirm_verdict(self, key, verdict, *, confirmation=None):
+        if not GATE.acquire(blocking=False):
+            raise AdvisoryError("busy")
+        try:
+            fresh = self.mutation_preview(key)
+            if confirmation != fresh["confirmation_digest"]:
+                raise AdvisoryError("confirmation_required")
+            saved = self._read(self._path(key) / "review.json")
+            request = require_request(saved["entry"]["request"])
+            if request["key"] != key:
+                raise AdvisoryError("cache_integrity_failed")
+            self.record_verdict(request, verdict, explicit_operator=True)
+        finally:
+            GATE.release()
+
     def history(self, current_key):
         key_check(current_key)
         safe_root(self.root)
@@ -192,19 +248,26 @@ class AdvisoryStore:
         return result
 
     def delete(self, key, *, explicit_operator=False):
-        if explicit_operator is not True:
-            raise AdvisoryError("explicit_deletion_required")
-        folder = self._path(key)
-        if folder.exists():
-            # No recursive deletion, external paths, or linked files.
-            files = list(folder.iterdir())
-            for p in files:
-                safe_root(p)
-                if not p.is_file():
-                    raise AdvisoryError("unexpected_cache_directory")
-            for p in files:
-                p.unlink()
-            folder.rmdir()
+        raise AdvisoryError("delete_deprecated")
+
+    def delete_review(self, key, *, confirmation=None):
+        if not GATE.acquire(blocking=False):
+            raise AdvisoryError("busy")
+        try:
+            fresh = self.mutation_preview(key)
+            if confirmation != fresh["confirmation_digest"]:
+                raise AdvisoryError("confirmation_required")
+            folder = self._path(key)
+            # Mandatory order. Interrupted deletion can never CREATE an orphan verdict.
+            for name in ("verdict.json", "review.json"):
+                path = folder / name
+                safe_root(path)
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+        finally:
+            GATE.release()
 
 
 def parse_response(raw):

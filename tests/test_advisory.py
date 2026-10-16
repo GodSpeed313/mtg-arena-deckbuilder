@@ -16,6 +16,8 @@ from mtgadb.model import Card, CardPrinting
 from services import advisory_contract as contract
 from services.advisory import AdvisoryCoordinator, FakeProvider
 from services.advisory_store import AdvisoryStore, safe_root
+from services import advisory_location as location
+COLLECT_REGISTRY = location.collect
 
 
 class AdvisoryTests(unittest.TestCase):
@@ -23,8 +25,10 @@ class AdvisoryTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.location = patch("services.advisory_store._location_evidence", return_value=(self.root, []))
-        self.location.start()
+        self.location_evidence = {"policy_version": "1", "profile": "S-1-5-21-1", "local_appdata": str(self.root),
+                                  "registry_view": "HKCU-64", "missing": [], "roots": []}
+        self.location = patch("services.advisory_location.collect", return_value=self.location_evidence)
+        self.location_mock = self.location.start()
         self.addCleanup(self.location.stop)
         self.db = self.root / "cards.db"
         with closing(sqlite3.connect(self.db)) as con:
@@ -295,10 +299,14 @@ class AdvisoryTests(unittest.TestCase):
 
     def test_explicit_delete_not_automatic_invalidation(self):
         self.run_review()
-        with self.assertRaises(contract.AdvisoryError):
-            self.store.delete(self.request["key"])
-        self.store.delete(self.request["key"], explicit_operator=True)
-        self.assertFalse(list(self.store.root.iterdir()))
+        self.store.record_verdict(self.request, "accepted", explicit_operator=True)
+        attempt = self.store.attempts(self.request["key"])[0]
+        self.store.diagnostic({**attempt, "key": self.request["key"]}, b'bad', {})
+        before = self.files()
+        for explicit in (True, False):
+            with self.assertRaisesRegex(contract.AdvisoryError, "^delete_deprecated$"):
+                self.store.delete(self.request["key"], explicit_operator=explicit)
+        self.assertEqual(before, self.files())
 
     def test_corrupted_cache_blocks_dispatch(self):
         self.run_review()
@@ -307,10 +315,10 @@ class AdvisoryTests(unittest.TestCase):
         self.assertEqual(self.provider.calls, 1)
 
     def test_safe_location_fail_closed(self):
-        with patch("services.advisory_store._location_evidence", side_effect=contract.AdvisoryError("unknown")):
+        with patch("services.advisory_location.collect", side_effect=contract.AdvisoryError("unknown")):
             with self.assertRaises(contract.AdvisoryError):
                 AdvisoryStore(self.root / "App")
-        with patch("services.advisory_store._location_evidence", return_value=(self.root, [self.root / "Sync"])):
+        with patch("services.advisory_location.collect", return_value={**self.location_evidence, "roots": [{"source": "test", "path": str(self.root / "Sync")}]}):
             with self.assertRaises(contract.AdvisoryError):
                 AdvisoryStore(self.root / "Sync" / "App")
         with self.assertRaises(contract.AdvisoryError):
@@ -390,6 +398,266 @@ class AdvisoryTests(unittest.TestCase):
         self.assertEqual(before, (render_json(view["offline_report"]), render_text(view["offline_report"])))
         self.assertIn("not evidence of absence", view["interpretation_label"])
         self.assertFalse(view["execution_authority"])
+
+    def files(self):
+        return {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+
+    def delete_review(self):
+        key = self.request["key"]
+        self.store.delete_review(key, confirmation=self.store.mutation_preview(key)["confirmation_digest"])
+
+    def attest(self):
+        self.location_evidence["missing"] = ["HKCU\\Accounts\\Personal"]
+        preview = location.inspect(self.store.root)
+        return location.attest(self.store.root, confirmation=preview["confirmation_digest"])
+
+    def test_location_only_missing_value_is_attestable(self):
+        import winreg
+        from unittest.mock import MagicMock
+        local_key, accounts, account = [MagicMock() for _ in range(3)]
+        for key in (local_key, accounts, account):
+            key.__enter__.return_value = key
+        def opening(parent, name, *args):
+            if name.endswith("User Shell Folders"): return local_key
+            if name == location.ACCOUNTS: return accounts
+            return account
+        def query(key, name):
+            if key is local_key: return str(self.root), winreg.REG_SZ
+            raise FileNotFoundError
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}, clear=True), patch.object(location, "_profile", return_value="S-1-5-21-1"), patch.object(winreg, "OpenKey", side_effect=opening) as op, patch.object(winreg, "QueryValueEx", side_effect=query) as q, patch.object(winreg, "QueryInfoKey", return_value=(1, 0, 0)), patch.object(winreg, "EnumKey", return_value="Personal") as enum:
+            self.assertEqual(COLLECT_REGISTRY()["missing"], ["HKCU\\" + location.ACCOUNTS + "\\Personal"])
+            with patch.object(location, 'reject_reparse', side_effect=contract.AdvisoryError('location_reparse_point')):
+                with self.assertRaisesRegex(contract.AdvisoryError, 'location_reparse_point'): COLLECT_REGISTRY()
+            for error in (PermissionError(), OSError()):
+                q.side_effect = lambda key, name, err=error: query(key, name) if key is local_key else (_ for _ in ()).throw(err)
+                with self.assertRaises(contract.AdvisoryError): COLLECT_REGISTRY()
+            for bad in ("", "relative", str(self.root / '..' / 'escape')):
+                q.side_effect = lambda key, name, value=bad: query(key, name) if key is local_key else (value, winreg.REG_SZ)
+                with self.assertRaises(contract.AdvisoryError): COLLECT_REGISTRY()
+            q.side_effect = query
+            enum.side_effect = PermissionError
+            with self.assertRaises(contract.AdvisoryError): COLLECT_REGISTRY()
+            enum.side_effect = None
+            op.side_effect = lambda parent, name, *a: (_ for _ in ()).throw(FileNotFoundError()) if name == "Personal" else opening(parent, name, *a)
+            with self.assertRaises(contract.AdvisoryError): COLLECT_REGISTRY()
+
+    def test_attestation_independent_storage_and_exact_invalidation(self):
+        self.location_evidence["missing"] = ["HKCU\\Accounts\\Personal"]
+        with self.assertRaises(contract.AdvisoryError): AdvisoryStore(self.store.root)
+        self.assertFalse(location.control_path(self.location_evidence).exists())
+        preview = location.inspect(self.store.root)
+        self.assertFalse(Path(preview["snapshot"]["control_path"]).is_relative_to(self.store.root))
+        location.attest(self.store.root, confirmation=preview["confirmation_digest"])
+        self.assertEqual(AdvisoryStore().root, self.store.root)
+        for field, value in [("missing", []), ("missing", ["HKCU\\Accounts\\Other"]),
+                             ("missing", ["HKCU\\Accounts\\Other", "HKCU\\Accounts\\Personal"]),
+                             ("roots", [{"source": "new populated account", "path": str(self.root / 'Sync')}]),
+                             ("profile", "S-1-5-21-2"), ("policy_version", "2"), ("registry_view", "HKCU-32"),
+                             ("local_appdata", str(self.root / 'Moved'))]:
+            changed = deepcopy(self.location_evidence); changed[field] = value
+            with patch.object(location, "collect", return_value=changed):
+                with self.assertRaises(contract.AdvisoryError): AdvisoryStore(self.store.root)
+        with self.assertRaises(contract.AdvisoryError): AdvisoryStore(self.store.root / 'different')
+        with self.assertRaises(contract.AdvisoryError): AdvisoryStore(self.root / 'other')
+        with self.assertRaisesRegex(contract.AdvisoryError, 'location_revoke_required'):
+            fresh = location.inspect(self.store.root)
+            location.attest(self.store.root, confirmation=fresh['confirmation_digest'])
+
+    def test_attestation_does_not_override_unsafe_paths(self):
+        self.attest()
+        for target in (self.root / '..' / 'escape', self.root.parent / (self.root.name + '-sibling'), self.root / 'OneDrive' / 'cache'):
+            with self.assertRaises(contract.AdvisoryError): location.inspect(target)
+        changed = {**self.location_evidence, "roots": [{"source": "positive", "path": str(self.store.root)}]}
+        with patch.object(location, "collect", return_value=changed):
+            with self.assertRaisesRegex(contract.AdvisoryError, 'location_positive_sync_overlap'): AdvisoryStore()
+        with self.assertRaisesRegex(contract.AdvisoryError, 'location_control_overlap'):
+            location.inspect(self.root / 'MTGDeckbuilder')
+
+    def test_changed_confirmation_and_interrupted_attestation(self):
+        self.location_evidence['missing'] = ['account']
+        preview = location.inspect(self.store.root)
+        self.location_evidence['missing'] = ['other']
+        with self.assertRaises(contract.AdvisoryError):
+            location.attest(self.store.root, confirmation=preview['confirmation_digest'])
+        preview = location.inspect(self.store.root)
+        with patch('services.advisory_location.os.replace', side_effect=OSError):
+            with self.assertRaises(OSError): location.attest(self.store.root, confirmation=preview['confirmation_digest'])
+        with self.assertRaises(contract.AdvisoryError): AdvisoryStore(self.store.root)
+        self.assertFalse(location.control_path(self.location_evidence).exists())
+
+    def test_revocation_and_corrupt_record_fail_closed_preserve_cache(self):
+        self.run_review()
+        before = {p.name: p.read_bytes() for p in self.store.root.rglob('*') if p.is_file()}
+        record = self.attest()
+        preview = location.revocation_preview(record['id'])
+        location.revoke(record['id'], confirmation=preview['confirmation_digest'])
+        with self.assertRaises(contract.AdvisoryError): AdvisoryStore()
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.store.root.rglob('*') if p.is_file()})
+        preview = location.inspect(self.store.root)
+        renewed = location.attest(self.store.root, confirmation=preview['confirmation_digest'])
+        self.assertNotEqual(record['id'], renewed['id'])
+        location.control_path(self.location_evidence).write_bytes(b'{}')
+        with self.assertRaises(contract.AdvisoryError): AdvisoryStore()
+
+    def test_review_delete_order_and_accepted_interruption_full_cycle(self):
+        self.run_review()
+        self.store.record_verdict(self.request, 'accepted', explicit_operator=True)
+        self.assertEqual(self.coordinator.run(self.request)['operator_verdict'], 'accepted')
+        folder = self.store.root / self.request['key']
+        (folder / 'diagnostic-preserved.json').write_bytes(b'{}')
+        preserved = {p.name: p.read_bytes() for p in folder.iterdir() if p.name not in ('review.json', 'verdict.json')}
+        original = Path.unlink
+        removed = []
+        def interrupt(path, *a, **kw):
+            removed.append(path.name)
+            if path.name == 'review.json': raise OSError('interrupted')
+            return original(path, *a, **kw)
+        with patch.object(Path, 'unlink', interrupt):
+            with self.assertRaises(OSError): self.delete_review()
+        self.assertEqual(removed, ['verdict.json', 'review.json'])
+        calls = self.provider.calls
+        retained = self.coordinator.run(self.request)
+        self.assertEqual(retained['state'], 'cached_valid')
+        self.assertEqual(retained['operator_verdict'], 'not_reviewed')
+        self.assertEqual(calls, self.provider.calls)
+        self.delete_review()
+        self.assertEqual(preserved, {p.name: p.read_bytes() for p in folder.iterdir()})
+        preview = self.coordinator.preview(self.request)
+        fresh = self.coordinator.run(self.request, preview=preview, authorize=True,
+                                     acknowledge_uncertainty=True)
+        self.assertEqual(fresh['state'], 'fresh_valid')
+        self.assertEqual(fresh['operator_verdict'], 'not_reviewed')
+
+    def test_orphan_verdict_recovery_no_authority(self):
+        self.run_review()
+        self.store.record_verdict(self.request, 'accepted', explicit_operator=True)
+        folder = self.store.root / self.request['key']
+        (folder / 'review.json').unlink()  # External orphan, explicitly required fixture.
+        calls = self.provider.calls
+        self.assertEqual(self.coordinator.run(self.request)['state'], 'unavailable')
+        self.assertEqual(self.provider.calls, calls)
+        self.assertEqual(self.store.inspection(self.request['key'])['operator_verdict'], 'not_reviewed')
+        attempts = {p.name:p.read_bytes() for p in folder.glob('attempt-*')}
+        self.delete_review()
+        self.assertEqual(attempts, {p.name:p.read_bytes() for p in folder.glob('attempt-*')})
+
+    def test_deletion_preserves_uncertainty_and_binds_state(self):
+        self.run_review()
+        folder = self.store.root / self.request['key']
+        for name, raw in [('malformed', b'bad'), ('unknown', b'{"state":"unknown"}'), ('interrupted', b'{"state":"interrupted"}')]:
+            (folder / ('attempt-' + name + '.json')).write_bytes(raw)
+        pending = self.store.begin(self.request['key'], self.coordinator.preview(self.request))
+        failed = self.store.begin(self.request['key'], self.coordinator.preview(self.request))
+        self.store.finish(failed, 'failed')
+        preview = self.store.mutation_preview(self.request['key'])
+        (folder / 'review.json').write_bytes(b'bad')
+        with self.assertRaises(contract.AdvisoryError):
+            self.store.delete_review(self.request['key'], confirmation=preview['confirmation_digest'])
+        history = {p.name:p.read_bytes() for p in folder.glob('attempt-*')}
+        self.delete_review()
+        self.assertEqual(history, {p.name:p.read_bytes() for p in folder.glob('attempt-*')})
+        p = self.coordinator.preview(self.request)
+        calls = self.provider.calls
+        self.assertEqual(self.coordinator.run(self.request, preview=p, authorize=True)['state'], 'unavailable')
+        self.assertEqual(self.provider.calls, calls)
+        self.assertEqual(self.coordinator.run(self.request, preview=p, authorize=True, acknowledge_uncertainty=True)['state'], 'fresh_valid')
+
+    def test_management_cli_no_provider_and_safe_confirmation(self):
+        from contextlib import redirect_stdout
+        import advisory_workbench as cli
+        self.run_review()
+        key = self.request['key']
+        before = self.files()
+        with patch.object(cli, 'AdvisoryStore', return_value=self.store), patch.object(cli, 'FakeProvider', side_effect=AssertionError('provider')), redirect_stdout(io.StringIO()) as output:
+            for action in ('status', 'show', 'attempts'):
+                self.assertEqual(cli.main(['cache', action, '--key', key]), 0)
+            for action in ('delete-review', 'verdict'):
+                args = ['cache', action, '--key', key] + (['--value','accepted'] if action == 'verdict' else [])
+                with patch('sys.stdin.isatty', return_value=False): self.assertEqual(cli.main(args), 2)
+                with patch('sys.stdin.isatty', return_value=True), patch('builtins.input', return_value='no'): self.assertEqual(cli.main(args), 2)
+                with patch('sys.stdin.isatty', return_value=True), patch('builtins.input', side_effect=KeyboardInterrupt): self.assertEqual(cli.main(args), 2)
+            self.assertIn('confirmation_required', output.getvalue())
+        self.assertEqual(before, self.files())
+        with patch.object(cli, 'AdvisoryStore', side_effect=RuntimeError('sk-ant-hidden')), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cli.main(['cache','status','--key',key]), 2)
+        self.assertNotIn('sk-ant-hidden', output.getvalue())
+
+    def test_confirmed_verdict_requires_current_valid_review(self):
+        self.run_review()
+        key = self.request['key']
+        preview = self.store.mutation_preview(key)
+        self.store.confirm_verdict(key, 'accepted', confirmation=preview['confirmation_digest'])
+        self.assertEqual(self.coordinator.run(self.request)['operator_verdict'], 'accepted')
+        with self.assertRaises(contract.AdvisoryError):
+            self.store.confirm_verdict(key, 'rejected', confirmation=preview['confirmation_digest'])
+        path = self.store.root / key / 'verdict.json'
+        path.write_bytes(contract.encoded({'entry_checksum':'wrong','verdict':'accepted'}))
+        self.assertEqual(self.coordinator.run(self.request)['state'], 'unavailable')
+
+    def test_control_file_reparse_and_late_evidence_change(self):
+        import stat
+        from types import SimpleNamespace
+        self.attest()
+        control = location.control_path(self.location_evidence)
+        original = Path.lstat
+        def redirected(path, *a, **kw):
+            info = original(path, *a, **kw)
+            if path == control:
+                return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT)
+            return info
+        with patch.object(Path, 'lstat', redirected):
+            with self.assertRaisesRegex(contract.AdvisoryError, 'location_reparse_point'): AdvisoryStore()
+        rec = location.revocation_preview(location.inspect(self.store.root)['current']['id'])
+        location.revoke(rec['record']['id'], confirmation=rec['confirmation_digest'])
+        preview = location.inspect(self.store.root)
+        changed = {**self.location_evidence, 'missing': ['different']}
+        old = control.read_bytes()
+        with patch.object(location, 'collect', side_effect=[self.location_evidence, changed]):
+            with self.assertRaisesRegex(contract.AdvisoryError, 'location_attestation_stale'):
+                location.attest(self.store.root, confirmation=preview['confirmation_digest'])
+        self.assertEqual(old, control.read_bytes())
+
+    def test_unreadable_attempt_and_changed_history_block_dispatch(self):
+        with patch.object(self.provider, 'review', side_effect=TimeoutError): self.run_review()
+        preview = self.coordinator.preview(self.request)
+        path = next(self.store.root.rglob('attempt-*.json'))
+        path.write_bytes(b'unknown')
+        calls = self.provider.calls
+        self.assertEqual(self.coordinator.run(self.request, preview=preview, authorize=True,
+                                             acknowledge_uncertainty=True)['state'], 'unavailable')
+        original = Path.read_bytes
+        def deny(p):
+            if p == path: raise PermissionError
+            return original(p)
+        with patch.object(Path, 'read_bytes', deny):
+            with self.assertRaisesRegex(contract.AdvisoryError, 'attempt_history_unreadable'):
+                self.coordinator.preview(self.request)
+        self.assertEqual(self.provider.calls, calls)
+
+    def test_cli_confirmed_management_and_location_lifecycle(self):
+        from contextlib import redirect_stdout
+        import advisory_workbench as cli
+        self.run_review()
+        key = self.request['key']
+        calls = self.provider.calls
+        with patch.object(cli, 'AdvisoryStore', return_value=self.store), patch.object(cli, 'FakeProvider', side_effect=AssertionError('provider')), patch('sys.stdin.isatty', return_value=True), redirect_stdout(io.StringIO()):
+            preview = self.store.mutation_preview(key)
+            with patch('builtins.input', return_value='ACCEPTED ' + key + ' ' + preview['confirmation_digest']):
+                self.assertEqual(cli.main(['cache','verdict','--key',key,'--value','accepted']), 0)
+            self.assertEqual(self.coordinator.run(self.request)['operator_verdict'], 'accepted')
+            preview = self.store.mutation_preview(key)
+            with patch('builtins.input', return_value='DELETE REVIEW ' + key + ' ' + preview['confirmation_digest']):
+                self.assertEqual(cli.main(['cache','delete-review','--key',key]), 0)
+            self.location_evidence['missing'] = ['account']
+            self.assertEqual(cli.main(['location','inspect','--cache-root',str(self.store.root)]), 0)
+            preview = location.inspect(self.store.root)
+            with patch('builtins.input', return_value='ATTEST ' + str(self.store.root) + ' ' + preview['confirmation_digest']):
+                self.assertEqual(cli.main(['location','attest','--cache-root',str(self.store.root)]), 0)
+            record = location.inspect(self.store.root)['current']
+            preview = location.revocation_preview(record['id'])
+            with patch('builtins.input', return_value='REVOKE ' + record['id'] + ' ' + preview['confirmation_digest']):
+                self.assertEqual(cli.main(['location','revoke','--attestation-id',record['id']]), 0)
+        self.assertEqual(self.provider.calls, calls)
 
 
 if __name__ == "__main__":

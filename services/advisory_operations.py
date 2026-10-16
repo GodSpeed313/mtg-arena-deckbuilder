@@ -1,0 +1,18 @@
+"""Shared single-process gate and public operational errors (no provider text)."""
+from threading import Lock
+from services.advisory_contract import AdvisoryError
+
+GATE = Lock()
+CODES = frozenset("""location_evidence_unreadable location_invalid_path location_known_folder_mismatch
+location_reparse_point cache_outside_application_data location_positive_sync_overlap
+location_attestation_corrupt location_control_overlap confirmation_required location_revoke_required
+location_attestation_missing location_attestation_stale location_missing_userfolder_attestation_required
+invalid_cache_key cache_integrity_failed cache_validation_failed cache_incomplete_attempt
+verdict_integrity_failed operator_verdict_required validated_review_required explicit_deletion_required
+delete_deprecated review_orphan_verdict attempt_history_unreadable busy real_provider_disabled
+explicit_authorization_required preview_consent_mismatch uncertain_attempt_acknowledgment_required
+credential_contamination invalid_response evidence_validation""".split())
+
+
+def error_code(error):
+    return str(error) if isinstance(error, AdvisoryError) and str(error) in CODES else "advisory_operation_failed"
