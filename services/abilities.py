@@ -651,6 +651,31 @@ def _parse_line(
             costs=[cost] if cost else [], unsupported=unsupported,
         )
 
+    # Match the complete self reference before the delimiter: full names may
+    # contain commas. Short aliases, other subjects and noncreatures are not
+    # part of this reviewed combat trigger grammar.
+    self_subjects = ["this creature"]
+    if card_name:
+        self_subjects.append(card_name)
+    combat = re.fullmatch(
+        r"Whenever (?P<trigger>(?:"
+        + "|".join(re.escape(subject) for subject in self_subjects)
+        + r") deals combat damage to a player), (?P<effect>.+)",
+        raw_text, re.I,
+    )
+    if combat and "Creature" in card_types:
+        effects, qualifiers, unsupported = _parse_effects(
+            combat.group("effect"), ability_id=ability_id, card_name=card_name
+        )
+        return _ability(
+            ability_id, source_index, raw_text, "triggered",
+            trigger=Trigger(
+                "combat_damage_to_player", "self", "you", True,
+                combat.group("trigger"),
+            ),
+            effects=effects, qualifiers=qualifiers, unsupported=unsupported,
+        )
+
     triggered = re.fullmatch(r"(?:When|Whenever) (?P<trigger>.+?), (?P<effect>.+)", raw_text, re.I)
     if triggered:
         trigger = _parse_trigger(triggered.group("trigger"), card_name=card_name)

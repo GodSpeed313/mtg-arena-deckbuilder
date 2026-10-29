@@ -551,9 +551,18 @@ creature, player, opponent, planeswalker, battle, each-opponent, and any-target
 wording. Exact tap-activated damage is identified as an activated capability, but
 activation frequency, available targets, and damage resolution are not evaluated.
 These capability features do not imply removal, burn, threat quality, interaction
-membership, or strategic value. Combat damage, prevention/replacement/redirection,
-relative or divided damage, excess damage, multipliers, fight/bite mechanics, and
-unreviewed trigger wording remain unsupported and visible.
+membership, or strategic value. For creature cards, the exact trigger
+"Whenever this creature deals combat damage to a player" (or the full card name
+in place of "this creature") is recognized structurally. Its effects use the
+existing effect grammar: unknown effects remain partial with their text retained,
+and recognized draw effects provide a conditional card-draw role. Short-name
+aliases, qualified or multiple-creature subjects, equipped/enchanted creatures,
+Vehicles, emblems, player-or-planeswalker/battle variants, and effects referring
+to "that player" remain unsupported or retained as remainder. No combat event,
+outcome, frequency or resolution is predicted. Other combat-damage wording,
+prevention/replacement/redirection, relative or divided damage, excess damage,
+multipliers, fight/bite mechanics, and unreviewed triggers remain unsupported and
+visible. This recognition adds no poison support or interaction family.
 
 Reviewed interaction forms also recognize exact targeted exile of a creature,
 permanent, artifact, enchantment, or card from a graveyard; return of a target

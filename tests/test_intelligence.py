@@ -28,6 +28,35 @@ def labels(result, dimension="role"):
 
 
 class ClassificationTests(unittest.TestCase):
+    def test_self_combat_draw_is_conditional_without_damage_or_interaction(self):
+        text = "Whenever Synthetic Card deals combat damage to a player, draw a card."
+        result = classify_card(card(text, types="Creature"))
+        features = [f for f in result["features"] if f["rule_id"] == "trigger.combat_player_draw.v1"]
+        self.assertEqual(len(features), 1)
+        self.assertEqual((features[0]["label"], features[0]["relationship"]),
+                         ("card_draw", "conditional"))
+        self.assertEqual(features[0]["evidence"], text)
+        self.assertIn("not evaluated", features[0]["explanation"])
+        self.assertNotIn("dependency_context", features[0])
+        self.assertFalse(any(f["rule_id"].startswith(("effect.damage.", "ability.activated_damage."))
+                             for f in result["features"]))
+        self.assertEqual(result["unsupported_text"], [])
+        self.assertEqual(interactions([result]), [])
+
+    def test_self_combat_unknown_effect_and_fynn_add_no_draw_or_poison_role(self):
+        for text in (
+            "Whenever this creature deals combat damage to a player, that player draws a card.",
+            "Whenever this creature deals combat damage to a player, that player gets two poison counters.",
+            "Whenever a creature you control with deathtouch deals combat damage to a player, "
+            "that player gets two poison counters.",
+        ):
+            with self.subTest(text=text):
+                result = classify_card(card(text, types="Creature"))
+                self.assertNotIn("card_draw", labels(result))
+                self.assertFalse(any("poison" in f["rule_id"] for f in result["features"]))
+                self.assertTrue(result["unsupported_text"])
+                self.assertEqual(interactions([result]), [])
+
     def test_role_positives_and_evidence(self):
         cases = {
             "Destroy target creature.": "removal",
@@ -143,7 +172,6 @@ class ClassificationTests(unittest.TestCase):
 
     def test_unsupported_damage_wording_does_not_project(self):
         cases = (
-            "Whenever Synthetic Card deals combat damage to a player, draw a card.",
             "Prevent the next 3 damage that would be dealt to target creature.",
             "Synthetic Card deals that much damage to target opponent.",
             "Synthetic Card deals damage equal to its power to target creature.",

@@ -7,6 +7,100 @@ from services.abilities import decompose_abilities
 
 
 class AbilityDecompositionTests(unittest.TestCase):
+    def test_self_combat_player_draw_retains_source_and_trigger_evidence(self):
+        for name, subject in (
+            ("Oakhame Adversary", "this creature"),
+            ("Oakhame Adversary", "Oakhame Adversary"),
+            ("Synthetic Card", "this creature"),
+            ("Synthetic Card", "Synthetic Card"),
+            ("Synthetic, Test Card", "Synthetic, Test Card"),
+            ("Synthetic (Test)", "Synthetic (Test)"),
+        ):
+            with self.subTest(name=name, subject=subject):
+                text = f"Whenever {subject} deals combat damage to a player, draw a card."
+                row = decompose_abilities(text, card_name=name, card_types="Creature")[0]
+                self.assertEqual(row.parse_status, "supported")
+                self.assertEqual(row.kind, "triggered")
+                self.assertEqual(row.raw_text, text)
+                self.assertEqual((row.trigger.event, row.trigger.subject,
+                                  row.trigger.controller, row.trigger.friendly),
+                                 ("combat_damage_to_player", "self", "you", True))
+                self.assertEqual(row.trigger.evidence,
+                                 f"{subject} deals combat damage to a player")
+                self.assertEqual((row.effects[0].kind, row.effects[0].amount), ("draw", 1))
+                self.assertFalse(row.unsupported_remainder)
+
+    def test_self_combat_unknown_effect_is_partial_without_invented_effect(self):
+        for effect in ("investigate.", "that player draws a card.",
+                       "that player gets two poison counters."):
+            with self.subTest(effect=effect):
+                row = decompose_abilities(
+                    "Whenever this creature deals combat damage to a player, " + effect,
+                    card_types="Creature",
+                )[0]
+                self.assertEqual(row.parse_status, "partial")
+                self.assertEqual(row.trigger.event, "combat_damage_to_player")
+                self.assertFalse(row.effects)
+                self.assertEqual([r.text for r in row.unsupported_remainder], [effect])
+
+    def test_self_combat_mixed_effect_preserves_unbound_player_remainder(self):
+        row = decompose_abilities(
+            "Whenever this creature deals combat damage to a player, "
+            "draw a card and that player discards a card.", card_types="Creature",
+        )[0]
+        self.assertEqual(row.parse_status, "partial")
+        self.assertEqual([e.kind for e in row.effects], ["draw"])
+        self.assertEqual([r.text for r in row.unsupported_remainder],
+                         ["that player discards a card."])
+
+    def test_self_combat_excludes_unreviewed_subjects_and_events(self):
+        triggers = (
+            "a creature you control with deathtouch deals combat damage to a player",
+            "this creature deals damage to a player",
+            "this creature deals combat damage to a creature",
+            "this creature deals combat damage to a player or planeswalker",
+            "this creature deals combat damage to a player or battle",
+            "one or more creatures you control deal combat damage to a player",
+            "equipped creature deals combat damage to a player",
+            "enchanted creature deals combat damage to a player",
+            "this Vehicle deals combat damage to a player",
+            "a Warrior you control deals combat damage to a player",
+            "Synthetic deals combat damage to a player",
+            "Another Card deals combat damage to a player",
+            "this creature deals combat damage to a player for the first time each turn",
+        )
+        for trigger in triggers:
+            with self.subTest(trigger=trigger):
+                text = f"Whenever {trigger}, draw a card."
+                row = decompose_abilities(text, card_name="Synthetic Card", card_types="Creature")[0]
+                self.assertEqual(row.parse_status, "unsupported")
+                self.assertIsNone(row.trigger)
+                self.assertFalse(row.effects)
+                self.assertEqual(row.unsupported_remainder[0].text, text)
+
+    def test_self_combat_noncreatures_and_when_stay_unsupported(self):
+        for types in ("Artifact", "Enchantment", "Emblem", "Planeswalker", ""):
+            for subject in ("this creature", "Synthetic Card"):
+                with self.subTest(types=types, subject=subject):
+                    row = decompose_abilities(
+                        f"Whenever {subject} deals combat damage to a player, draw a card.",
+                        card_name="Synthetic Card", card_types=types,
+                    )[0]
+                    self.assertEqual(row.parse_status, "unsupported")
+        row = decompose_abilities(
+            "When this creature deals combat damage to a player, draw a card.",
+            card_types="Creature",
+        )[0]
+        self.assertEqual(row.parse_status, "unsupported")
+
+    def test_self_combat_keeps_modal_and_anomaly_guards(self):
+        text = "Whenever this creature deals combat damage to a player, draw a card."
+        anomaly = decompose_abilities(text, card_types="Creature", canonical_anomaly=True)[0]
+        self.assertEqual(anomaly.parse_status, "anomalous")
+        self.assertIsNone(anomaly.trigger)
+        modal = decompose_abilities("Choose one —\n" + text, card_types="Creature")
+        self.assertTrue(all(a.parse_status == "unsupported" and a.trigger is None for a in modal))
+
     def test_deadly_dispute_separates_additional_cost_and_partial_effect(self):
         rows = decompose_abilities(
             "As an additional cost to cast this spell, sacrifice an artifact or creature.\n"
@@ -182,7 +276,6 @@ class AbilityDecompositionTests(unittest.TestCase):
 
     def test_unsupported_damage_semantics_remain_unsupported(self):
         cases = (
-            "Whenever Synthetic Card deals combat damage to a player, draw a card.",
             "Synthetic Card assigns combat damage as though it weren't blocked.",
             "Prevent the next 3 damage that would be dealt to target creature.",
             "If damage would be dealt to you, prevent that damage.",

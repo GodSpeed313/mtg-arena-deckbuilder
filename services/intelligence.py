@@ -152,6 +152,18 @@ def _project_ability_features(
                 "Exact whole-line intrinsic keyword; no strategic value is inferred.",
             )
         draws = [effect for effect in ability.effects if effect.kind == "draw"]
+        if (
+            ability.trigger is not None
+            and ability.trigger.event == "combat_damage_to_player"
+            and ability.trigger.subject == "self"
+            and draws
+        ):
+            feature(
+                "trigger.combat_player_draw.v1", "role", "card_draw", "conditional",
+                ability.raw_text,
+                "Draw requires this creature to deal combat damage to a player; "
+                "event occurrence, frequency and resolution are not evaluated.",
+            )
         for effect in ability.effects:
             friendly_trigger = ability.trigger is None or ability.trigger.friendly is True
             capability_effects = {
