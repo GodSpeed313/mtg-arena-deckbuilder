@@ -654,6 +654,40 @@ def _parse_line(
     # Match the complete self reference before the delimiter: full names may
     # contain commas. Short aliases, other subjects and noncreatures are not
     # part of this reviewed combat trigger grammar.
+    qualified = re.fullmatch(
+        r"Whenever a creature you control with (?P<keyword>[a-z]+(?: strike)?) "
+        r"deals combat damage to a player, (?P<effect>.+)", raw_text, re.I,
+    )
+    if qualified and qualified.group("keyword").lower().replace(" ", "_") in (
+        _INTRINSIC_KEYWORDS | {"toxic"}
+    ) and permanent:
+        keyword = qualified.group("keyword").lower().replace(" ", "_")
+        effects, unsupported = [], []
+        for sentence in _SENTENCE_SPLIT.split(qualified.group("effect")):
+            poison = re.fullmatch(
+                r"that player gets (?P<count>\d+|a|one|two|three) poison counters?\.",
+                sentence, re.I,
+            )
+            if poison:
+                effects.append(Effect(
+                    f"{ability_id}.effect.{len(effects) + 1:03d}",
+                    "put_player_poison_counters", sentence,
+                    amount=_count(poison.group("count")), target="damaged_player",
+                    counter_type="poison", source="ability_source", friendly=None,
+                    conditions=(Condition("event_recipient", "damaged_player",
+                                          "combat_damage_to_player", raw_text),),
+                ))
+            else:
+                unsupported.append(UnsupportedRemainder(sentence, "effect", "unsupported_clause"))
+        return _ability(
+            ability_id, source_index, raw_text, "triggered",
+            trigger=Trigger("combat_damage_to_player", "creature_you_control", "you", True,
+                            raw_text[:raw_text.index(",")],
+                            (Condition("has_intrinsic_or_granted_keyword", "damage_source",
+                                       keyword, qualified.group("keyword")),)),
+            effects=effects, unsupported=unsupported,
+        )
+
     self_subjects = ["this creature"]
     if card_name:
         self_subjects.append(card_name)

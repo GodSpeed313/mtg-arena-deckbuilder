@@ -295,7 +295,7 @@ class NeedsAnalysisTests(unittest.TestCase):
         result = analyze_deck(Deck(main={701: 4, 401: 2, 1101: 54}), self.con)
         self.assertEqual(result["analysis_version"], "5")
         self.assertEqual(result["needs_model_version"], "3")
-        self.assertEqual(result["dependency_model_version"], "3")
+        self.assertEqual(result["dependency_model_version"], "4")
         self.assertEqual(result["functional_package_model_version"], "1")
         self.assertEqual(
             {item["rule_id"] for item in result["interactions"]},

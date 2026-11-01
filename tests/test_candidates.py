@@ -273,7 +273,7 @@ class CandidatePoolTests(unittest.TestCase):
         self.assertEqual(tuple(self.con.iterdump()), database_before)
         self.assertEqual(diagnose_analysis(analysis), diagnosis_before)
         self.assertEqual(analysis["needs_model_version"], "3")
-        self.assertEqual(analysis["dependency_model_version"], "3")
+        self.assertEqual(analysis["dependency_model_version"], "4")
         self.assertEqual(analysis["functional_package_model_version"], "1")
         self.assertEqual(
             {row["rule_id"] for row in analysis["interactions"]},

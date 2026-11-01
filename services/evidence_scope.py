@@ -9,7 +9,7 @@ from functools import lru_cache
 from typing import get_type_hints, get_origin, get_args
 from types import UnionType
 
-from services.abilities import Condition, Cost, Effect, Qualifier, TokenSpec, Trigger, UnsupportedRemainder
+from services.abilities import Condition, Cost, Effect, Qualifier, TokenSpec, Trigger, UnsupportedRemainder, Keyword
 
 
 def encoded(value):
@@ -88,6 +88,17 @@ def require_context(value):
     origin = value["origin"]
     if type(origin) is not dict:
         raise ValueError("origin is required")
+    if origin.get("kind") == "intrinsic_creature_keyword":
+        _closed(origin, ("kind", "types", "keyword"))
+        _record(origin["keyword"], Keyword)
+        if (origin["types"] != sorted(set(origin["types"]))
+                or "Creature" not in origin["types"]
+                or origin["keyword"]["name"] != "deathtouch"
+                or origin["keyword"]["subject"] != "self"
+                or origin["keyword"]["evidence"].casefold() != "deathtouch"
+                or origin["keyword"]["value"] is not None or value["effect"] is not None):
+            raise ValueError("intrinsic creature keyword evidence is malformed")
+        return value
     if origin.get("kind") == "card_type":
         _closed(origin, ("kind", "types"))
         types = origin["types"]
@@ -183,6 +194,10 @@ def context_view(value):
     """Owner-derived compatibility view; never a wire contract or writable fact."""
     value = require_context(value)
     origin = value["origin"]
+    if origin["kind"] == "intrinsic_creature_keyword":
+        return {**assessment(value), "effect": None,
+                "ability_kind": "intrinsic_creature_keyword", "keyword": origin["keyword"],
+                "types": origin["types"], "parse_status": "supported", "unsupported_remainder": []}
     return {**assessment(value), "effect": value["effect"],
             "ability_kind": origin.get("ability_kind", "card_type"),
             "parse_status": origin.get("parse_status", "supported"),
@@ -209,6 +224,10 @@ def validate_feature_context(feature):
         if origin["kind"] != "card_type" or not set(origin["types"]) & {"Instant", "Sorcery"}:
             raise ValueError("spell membership contradicts structural origin")
         return context
+    if rule == "intrinsic.creature_deathtouch.v1":
+        if origin["kind"] != "intrinsic_creature_keyword":
+            raise ValueError("intrinsic membership lacks keyword/type evidence")
+        return context
     if origin["kind"] != "ability":
         raise ValueError("ability feature has a structural origin")
     effect_kinds = {"effect.lifegain.v1": "gain_life", "effect.counter.v1": "put_counter",
@@ -221,7 +240,7 @@ def validate_feature_context(feature):
         raise ValueError("recognized trigger contradicts feature rule")
     if rule.startswith("effect.") and effect is None:
         raise ValueError("effect feature lacks its effect")
-    if rule.startswith(("trigger.", "cost.")) and effect is not None:
+    if rule.startswith(("trigger.", "cost.")) and effect is not None and rule != "trigger.qualified_poison.v1":
         raise ValueError("trigger/cost feature must retain its origin without an effect")
     from services.dependencies import _context_matches_rule
     if not _context_matches_rule(feature, context_view(context), payoff=rule.startswith(("trigger.", "cost."))):
@@ -266,6 +285,35 @@ def source_need(analysis, zone, finding):
     return require_source_need(result)
 
 
+def require_dependency_versions(identity):
+    """Accept only the two explicit provenance contracts; never relabel them."""
+    if (identity.get("analysis_version"), identity.get("dependency_model_version"),
+            identity.get("needs_model_version")) not in (("5", "3", "3"), ("5", "4", "3")):
+        raise ValueError("unsupported dependency evidence versions")
+    return identity["dependency_model_version"]
+
+
+def require_dependency_vocabulary(value, version):
+    """Version 3 cannot carry the new qualified-combat evidence vocabulary."""
+    if version not in ("3", "4"):
+        raise ValueError("unsupported dependency evidence version")
+    if version == "4":
+        return
+    if isinstance(value, dict):
+        if (value.get("kind") in {"intrinsic_creature_keyword", "put_player_poison_counters",
+                                  "has_intrinsic_or_granted_keyword", "event_recipient"}
+                or value.get("rule_id") in {"intrinsic.creature_deathtouch.v1", "trigger.qualified_poison.v1"}
+                or value.get("dependency_id") == "dependency.deathtouch_combat_poison.v1"
+                or (value.get("event") == "combat_damage_to_player"
+                    and value.get("subject") == "creature_you_control")):
+            raise ValueError("version 4 evidence cannot be interpreted as version 3")
+        for item in value.values():
+            require_dependency_vocabulary(item, version)
+    elif isinstance(value, list):
+        for item in value:
+            require_dependency_vocabulary(item, version)
+
+
 def require_source_need(value):
     from mtgadb.deck_identity import require_deck_snapshot_identity
     value = normalize(value)
@@ -279,8 +327,8 @@ def require_source_need(value):
         raise ValueError("source need semantics are malformed")
     identity = _closed(value["source_identity"], ("analyzed_deck_identity", "analysis_version", "dependency_model_version", "needs_model_version"))
     require_deck_snapshot_identity(identity["analyzed_deck_identity"])
-    if (identity["analysis_version"], identity["dependency_model_version"], identity["needs_model_version"]) != ("5", "3", "3"):
-        raise ValueError("source need versions are unsupported")
+    version = require_dependency_versions(identity)
+    require_dependency_vocabulary(value, version)
     from services.dependencies import DEPENDENCIES
     definition = next((item for item in DEPENDENCIES if item.dependency_id == value["dependency_id"]), None)
     if definition is None or value["finding_id"] != f"need.{definition.label}.enabler.v{definition.dependency_id.rsplit('.v', 1)[1]}":
@@ -357,6 +405,7 @@ def require_captured_evidence(source, evidence, support, completeness, deck_iden
     if encoded(source["source_identity"]["analyzed_deck_identity"]) != encoded(deck_identity):
         raise ValueError("source scope deck contradicts captured context")
     evidence = normalize(evidence)
+    require_dependency_vocabulary(evidence, source["source_identity"]["dependency_model_version"])
     if type(evidence) is not list or not evidence:
         raise ValueError("captured context requires matching routes")
     for feature in evidence:
@@ -372,10 +421,10 @@ def require_captured_evidence(source, evidence, support, completeness, deck_iden
 
 
 def verify_source_analysis(pools, analysis):
-    if type(analysis) is not dict or (
-        analysis.get("analysis_version"), analysis.get("dependency_model_version"), analysis.get("needs_model_version")
-    ) != ("5", "3", "3"):
-        raise ValueError("originating Analysis 5 / Dependencies 3 / Needs 3 is required")
+    if type(analysis) is not dict:
+        raise ValueError("originating analysis is required")
+    version = require_dependency_versions(analysis)
+    require_dependency_vocabulary(analysis, version)
     expected = {}
     for zone, data in analysis["zones"].items():
         for finding in data["needs"]:

@@ -137,8 +137,9 @@ def discover_candidates(
     limit_per_need: int | None = None,
 ) -> dict:
     """Return neutral per-need candidate pools without mutating inputs or data."""
-    if (analysis.get("analysis_version"), analysis.get("dependency_model_version"), analysis.get("needs_model_version")) != ("5", "3", "3"):
-        raise ValueError("candidate discovery requires Analysis 5 / Dependencies 3 / Needs 3")
+    from services.evidence_scope import require_dependency_versions, require_dependency_vocabulary
+    version = require_dependency_versions(analysis)
+    require_dependency_vocabulary(analysis, version)
     analyzed_deck_identity = require_deck_snapshot_identity(
         analysis.get("analyzed_deck_identity")
     )

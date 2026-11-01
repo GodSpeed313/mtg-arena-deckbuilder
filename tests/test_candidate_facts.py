@@ -363,7 +363,7 @@ class CandidateFactsTests(unittest.TestCase):
         self.assertEqual(tuple(self.con.iterdump()), database_before)
         self.assertEqual(diagnose_analysis(analysis), diagnosis_before)
         self.assertEqual(analysis["needs_model_version"], "3")
-        self.assertEqual(analysis["dependency_model_version"], "3")
+        self.assertEqual(analysis["dependency_model_version"], "4")
         self.assertEqual(analysis["functional_package_model_version"], "1")
 
     def test_contradictory_duplicate_candidate_facts_fail_closed(self):

@@ -73,6 +73,13 @@ class AbilityDecompositionTests(unittest.TestCase):
             with self.subTest(trigger=trigger):
                 text = f"Whenever {trigger}, draw a card."
                 row = decompose_abilities(text, card_name="Synthetic Card", card_types="Creature")[0]
+                if trigger == "a creature you control with deathtouch deals combat damage to a player":
+                    self.assertEqual(row.parse_status, "partial")
+                    self.assertEqual(row.trigger.subject, "creature_you_control")
+                    self.assertEqual(row.trigger.conditions[0].value, "deathtouch")
+                    self.assertFalse(row.effects)
+                    self.assertEqual(row.unsupported_remainder[0].text, "draw a card.")
+                    continue
                 self.assertEqual(row.parse_status, "unsupported")
                 self.assertIsNone(row.trigger)
                 self.assertFalse(row.effects)

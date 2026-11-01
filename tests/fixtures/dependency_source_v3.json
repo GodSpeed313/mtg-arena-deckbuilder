@@ -1,0 +1,106 @@
+{
+  "finding_id": "need.lifegain.enabler.v1",
+  "finding_type": "support_need",
+  "dependency_id": "dependency.lifegain.v1",
+  "dependency_state": "payoff_without_enabler",
+  "dependency_policy": "strict",
+  "existing_side_name": "payoff",
+  "missing_side_name": "enabler",
+  "zone": "main",
+  "existing_side": {
+    "relationship": "payoff",
+    "acceptable_feature_rule_ids": [
+      "trigger.lifegain.v1"
+    ],
+    "matching_semantics": "any",
+    "copy_count": 1,
+    "cards": [
+      {
+        "title_id": 2,
+        "quantity": 1,
+        "evidence": [
+          {
+            "rule_id": "trigger.lifegain.v1",
+            "dimension": "theme",
+            "label": "lifegain",
+            "relationship": "payoff",
+            "evidence": "Whenever you gain life, draw a card.",
+            "dependency_context": {
+              "origin": {
+                "kind": "ability",
+                "ability_id": "ability.001",
+                "source_index": 1,
+                "ability_kind": "triggered",
+                "parse_status": "supported",
+                "trigger": {
+                  "event": "life_gained",
+                  "subject": "you",
+                  "controller": "you",
+                  "friendly": true,
+                  "evidence": "you gain life",
+                  "conditions": []
+                },
+                "costs": [],
+                "qualifiers": [],
+                "unsupported_remainder": []
+              },
+              "effect": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "missing_side": {
+    "relationship": "producer",
+    "acceptable_feature_rule_ids": [
+      "effect.lifegain.v1"
+    ],
+    "matching_semantics": "any",
+    "copy_count": 0,
+    "cards": []
+  },
+  "evidence_boundary": {
+    "claim_scope": "reviewed_features_only",
+    "zone_resolution": "resolved",
+    "unresolved_printing_copies": 0,
+    "unclassified_card_copies": 0,
+    "partially_classified_card_copies": 0,
+    "unsupported_text_card_copies": 0,
+    "rules_text_coverage": {
+      "ability_count": 2,
+      "structurally_recognized_ability_count": 2,
+      "meaningfully_understood_ability_count": 2,
+      "supported_ability_count": 2,
+      "partial_ability_count": 0,
+      "unsupported_ability_count": 0,
+      "anomalous_ability_count": 0,
+      "weighting": "card_copy_times_ability"
+    }
+  },
+  "source_identity": {
+    "analyzed_deck_identity": {
+      "deck_snapshot_identity_version": "1",
+      "digest_algorithm": "sha256",
+      "canonical_payload": {
+        "main": [
+          [
+            201,
+            1
+          ]
+        ],
+        "sideboard": [
+          [
+            301,
+            1
+          ]
+        ],
+        "commander": []
+      },
+      "digest": "db72cc97290147360c556e370877ced55f926ba8fe15bc2939b6953771206459"
+    },
+    "analysis_version": "5",
+    "dependency_model_version": "3",
+    "needs_model_version": "3"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "provenance": "Extracted from unchanged canonical-candidate.db; SHA256 88d9555f6d159be8e589b6bba181dbaed5480b05ebf13f04bb5c603ebaf679c6",
+  "card": {
+    "title_id": 477565,
+    "name": "Fynn, the Fangbearer",
+    "mana_cost": "{1}{G}",
+    "cmc": 2,
+    "types": "Creature",
+    "subtypes": "Human Warrior",
+    "colors": "G",
+    "color_identity": "G",
+    "power": "1",
+    "toughness": "3",
+    "rules_text": "Deathtouch\nWhenever a creature you control with deathtouch deals combat damage to a player, that player gets two poison counters.",
+    "source_printing_id": 96275,
+    "resolution": "single",
+    "anomaly_count": 0
+  }
+}

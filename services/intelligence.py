@@ -10,7 +10,7 @@ from mtgadb.model import Card, Deck
 from mtgadb.deck_identity import build_deck_snapshot_identity
 from mtgadb.query import CardQueryEngine
 from services.abilities import Ability, decompose_abilities
-from services.evidence_scope import context_from_ability, structural_context, normalize
+from services.evidence_scope import context_from_ability, structural_context, normalize, require_context
 from services.dependencies import (
     DEPENDENCY_MODEL_VERSION,
     INTERACTION_FAMILIES,
@@ -454,6 +454,25 @@ def classify_card(card: Card) -> dict:
     )
     projected_features = _project_ability_features(abilities, permanent=permanent)
     features.extend(projected_features)
+    if "Creature" in types:
+        for ability in abilities:
+            for keyword in ability.keywords:
+                if keyword.name == "deathtouch" and keyword.subject == "self":
+                    add("intrinsic.creature_deathtouch.v1", "ability", "deathtouch", "intrinsic",
+                        keyword.evidence, "Intrinsic creature keyword: potential deck enabler only.",
+                        require_context({"origin": {"kind": "intrinsic_creature_keyword",
+                                                     "types": sorted(types), "keyword": asdict(keyword)},
+                                         "effect": None}))
+    for ability in abilities:
+        if (ability.trigger and ability.trigger.subject == "creature_you_control"
+                and ability.trigger.event == "combat_damage_to_player"):
+            for effect in ability.effects:
+                if effect.kind == "put_player_poison_counters":
+                    add("trigger.qualified_poison.v1", "ability", "conditional_poison", "conditional",
+                        ability.raw_text,
+                        "The ability source and qualifying damage source are distinct roles. "
+                        "Combat damage, resolution and poison receipt are not established.",
+                        context_from_ability(ability, effect))
     text_supported = not anomalous and not contextual
     matched_lines = set()
     for line in text_lines:

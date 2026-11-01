@@ -22,6 +22,11 @@ def needs_findings(
     """Project active dependency gaps into needs or neutral opportunities."""
     findings = []
     for dependency in dependencies:
+        # This bounded combat dependency is observational only. In particular,
+        # absence of intrinsic enablers must not drive candidate discovery or
+        # imply absence of deferred granted-keyword routes.
+        if dependency["label"] == "deathtouch_combat_poison":
+            continue
         state = dependency.get("state")
         if state == "supported":
             continue

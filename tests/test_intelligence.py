@@ -53,6 +53,13 @@ class ClassificationTests(unittest.TestCase):
             with self.subTest(text=text):
                 result = classify_card(card(text, types="Creature"))
                 self.assertNotIn("card_draw", labels(result))
+                if text.startswith("Whenever a creature you control with deathtouch"):
+                    poison = [f for f in result["features"] if f["rule_id"] == "trigger.qualified_poison.v1"]
+                    self.assertEqual(len(poison), 1)
+                    self.assertEqual(poison[0]["relationship"], "conditional")
+                    self.assertFalse(result["unsupported_text"])
+                    self.assertEqual(interactions([result]), [])
+                    continue
                 self.assertFalse(any("poison" in f["rule_id"] for f in result["features"]))
                 self.assertTrue(result["unsupported_text"])
                 self.assertEqual(interactions([result]), [])

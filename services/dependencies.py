@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from services.evidence_scope import context_view
 
-DEPENDENCY_MODEL_VERSION = "3"
+DEPENDENCY_MODEL_VERSION = "4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,14 @@ class InteractionFamily:
 
 
 DEPENDENCIES = (
+    DependencyDefinition(
+        "dependency.deathtouch_combat_poison.v1", "deathtouch_combat_poison",
+        ("intrinsic.creature_deathtouch.v1",), "intrinsic",
+        ("trigger.qualified_poison.v1",), "conditional",
+        "Intrinsic-deathtouch creatures are potential enablers only: combat damage "
+        "to a player under the required controller and trigger resolution remain prerequisites. "
+        "No combat event or poison receipt is established; granted routes are outside this model.",
+    ),
     DependencyDefinition(
         "dependency.lifegain.v1", "lifegain", ("effect.lifegain.v1",), "producer",
         ("trigger.lifegain.v1",), "payoff",
@@ -128,6 +136,24 @@ def _context_matches_rule(feature: dict, context: dict, *, payoff: bool) -> bool
     effect = context.get("effect")
     trigger = context["prerequisites"].get("trigger")
     costs = context["prerequisites"]["costs"]
+    if rule_id == "intrinsic.creature_deathtouch.v1":
+        return (not payoff and context.get("ability_kind") == "intrinsic_creature_keyword"
+                and "Creature" in context.get("types", [])
+                and context.get("keyword", {}).get("name") == "deathtouch")
+    if rule_id == "trigger.qualified_poison.v1":
+        return (payoff and isinstance(trigger, dict) and isinstance(effect, dict)
+                and trigger.get("event") == "combat_damage_to_player"
+                and trigger.get("subject") == "creature_you_control"
+                and trigger.get("controller") == "you"
+                and len(trigger.get("conditions", [])) == 1
+                and trigger["conditions"][0].get("kind") == "has_intrinsic_or_granted_keyword"
+                and effect.get("kind") == "put_player_poison_counters"
+                and effect.get("target") == "damaged_player"
+                and effect.get("counter_type") == "poison"
+                and effect.get("source") == "ability_source"
+                and type(effect.get("amount")) is int
+                and effect.get("conditions") == [{"kind": "event_recipient", "subject": "damaged_player",
+                    "value": "combat_damage_to_player", "evidence": feature.get("evidence")}])
     if rule_id == "effect.lifegain.v1":
         return (
             isinstance(effect, dict)
@@ -206,6 +232,8 @@ def _compatible(definition, enabler_card, enabler_feature, payoff_card, payoff_f
         or not _context_matches_rule(payoff_feature, payoff_context, payoff=True)
     ):
         return False
+    if definition.label == "deathtouch_combat_poison":
+        return payoff_context["prerequisites"]["trigger"]["conditions"][0]["value"] == "deathtouch"
     if definition.label == "creature_token_entry":
         trigger = payoff_context["prerequisites"]["trigger"]
         if trigger.get("subject") == "creature_token":
@@ -249,12 +277,19 @@ def _pairs(cards: list[dict], definition: DependencyDefinition) -> list[dict]:
                         "payoff_title_id": payoff_card["title_id"],
                         "support": (
                             "unconditional"
-                            if enabler_context["availability"] == "unconditional" and _reviewed_context(payoff_feature)["establishment"] == "established"
+                            if definition.label != "deathtouch_combat_poison" and enabler_context["availability"] == "unconditional" and _reviewed_context(payoff_feature)["establishment"] == "established"
                             else "conditional" if enabler_context["establishment"] == "established" and _reviewed_context(payoff_feature)["establishment"] == "established" else "unestablished"
                         ),
                         "enabler_evidence": enabler_feature,
                         "payoff_evidence": payoff_feature,
                     })
+    if definition.label == "deathtouch_combat_poison":
+        unique = {}
+        for pair in pairs:
+            key = (pair["enabler_title_id"], pair["payoff_title_id"],
+                   pair["payoff_evidence"]["dependency_context"]["effect"]["effect_id"])
+            unique.setdefault(key, pair)
+        return list(unique.values())
     return pairs
 
 
@@ -278,11 +313,24 @@ def dependency_findings(cards: list[dict]) -> list[dict]:
     """Return active, zone-local compatibility facts from reviewed evidence."""
     findings = []
     for definition in DEPENDENCIES:
-        enabler = _side(cards, definition.enabler_rule_ids, definition.enabler_relationship)
-        payoff = _side(cards, definition.payoff_rule_ids, definition.payoff_relationship)
+        scoped_cards = cards
+        if definition.label == "deathtouch_combat_poison":
+            scoped_cards = [{**card, "features": [f for f in card["features"]
+                if ((f.get("rule_id") == "intrinsic.creature_deathtouch.v1"
+                     and (c := _reviewed_context(f)) is not None
+                     and _context_matches_rule(f, c, payoff=False))
+                    or (f.get("rule_id") == "trigger.qualified_poison.v1"
+                        and (c := _reviewed_context(f)) is not None
+                        and _context_matches_rule(f, c, payoff=True)
+                        and c["prerequisites"]["trigger"]["conditions"][0]["value"] == "deathtouch"))]}
+                for card in cards]
+        enabler = _side(scoped_cards, definition.enabler_rule_ids, definition.enabler_relationship)
+        payoff = _side(scoped_cards, definition.payoff_rule_ids, definition.payoff_relationship)
+        if definition.label == "deathtouch_combat_poison" and not payoff["cards"]:
+            continue
         if not enabler["cards"] and not payoff["cards"]:
             continue
-        pairs = _pairs(cards, definition)
+        pairs = _pairs(scoped_cards, definition)
         if pairs:
             state = ("supported" if any(pair["support"] == "unconditional" for pair in pairs)
                      else "conditionally_supported" if any(pair["support"] == "conditional" for pair in pairs) else "support_scope_unestablished")
