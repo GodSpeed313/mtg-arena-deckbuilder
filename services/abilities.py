@@ -612,7 +612,37 @@ def _parse_line(
     source_index: int,
     card_name: str,
     card_types: frozenset[str],
+    grammar_version: str = "5",
 ) -> Ability:
+    if grammar_version not in ("5", "8"):
+        raise ValueError("unsupported recognition grammar version")
+    if grammar_version == "8":
+        keyword = None
+        costs = []
+        if raw_text == "Flash":
+            keyword = Keyword("flash", "self", raw_text)
+        elif raw_text == "Enchant creature":
+            keyword = Keyword("enchant", "self", raw_text, "creature")
+        else:
+            equip = re.fullmatch(
+                r"Equip (?P<cost>\{(?:[0-9]+|[WUBRGCXYZ]|[WUBRG]/[WUBRG]|2/[WUBRG])\})",
+                raw_text,
+            )
+            crew = re.fullmatch(r"Crew (?P<count>[0-9]+)", raw_text)
+            if equip:
+                keyword = Keyword("equip", "self", raw_text, equip.group("cost"))
+                costs = [Cost("mana", "self", "activated", equip.group("cost"))]
+            elif crew:
+                # Preserve the literal integer spelling in the existing value field.
+                keyword = Keyword("crew", "self", raw_text, crew.group("count"))
+        if keyword is not None:
+            return _ability(
+                ability_id, source_index, raw_text, "keyword_ability",
+                keywords=[keyword], costs=costs,
+                unsupported=[UnsupportedRemainder(
+                    raw_text, "ability", "analysis8_unmodeled_" + keyword.name,
+                )],
+            )
     permanent = bool(card_types & {
         "Creature", "Artifact", "Enchantment", "Land", "Planeswalker",
     })
@@ -766,8 +796,11 @@ def decompose_abilities(
     card_name: str = "",
     card_types: str = "",
     canonical_anomaly: bool = False,
+    grammar_version: str = "5",
 ) -> tuple[Ability, ...]:
     """Return source-ordered ability records for one canonical card text."""
+    if grammar_version not in ("5", "8"):
+        raise ValueError("unsupported recognition grammar version")
     lines = tuple(line.strip() for line in rules_text.splitlines() if line.strip())
     types = frozenset(card_types.split())
     result = []
@@ -796,5 +829,6 @@ def decompose_abilities(
             source_index=index,
             card_name=card_name,
             card_types=types,
+            grammar_version=grammar_version,
         ))
     return tuple(result)
