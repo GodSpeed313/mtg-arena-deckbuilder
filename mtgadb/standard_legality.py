@@ -11,6 +11,7 @@ from pathlib import Path
 import sqlite3
 
 VERSION = 1
+SET_DISAGREEMENT = 'source disagreement: Scryfall (2026-11-05) base-legal vs Arena format legal-set list (2026-09-12)'
 FINAL_AUTHORITY = "Arena remains the final authority for deck import and queue eligibility. Successful import alone does not establish BO1 or BO3 legality."
 DETERMINATION = """## Operator determination (recorded as such, not as data-verified evidence)
 
@@ -222,14 +223,28 @@ def assess(paths, expected, queue_bindings, queues):
                             if r['title_id'] == tid and r['rule'] in ('banned', 'suspended', 'suppressed')]
             allowed = any(r['title_id'] == tid and r['rule'] == 'allowed' for r in overlay['rules'])
             title_sets = sorted({printings[aid]['set_code'] for aid in ids})
+            disagreements = []
             if state == 'legal' and not basic and not allowed and not set(title_sets).intersection(overlay['legal_sets']):
-                restrictions.append(dict(format=queue_bindings[q]['format'], rule='legal_sets', source='formats',
-                                         as_of=AS_OF['formats'], title_sets=title_sets, legal_sets=overlay['legal_sets']))
+                # A dated set-list omission is not an affirmative title restriction.
+                # This schema supplies neither exhaustive-set semantics nor evidence
+                # that the omission applies across the sources' different dates.
+                # Preserve the competing claims without manufacturing either fact.
+                disagreements.append(dict(
+                    reason=SET_DISAGREEMENT,
+                    base_claim=dict(source='scryfall', as_of=AS_OF['scryfall'], status='legal',
+                                    exact_record_ids=[x['id'] for x in matches]),
+                    overlay_claim=dict(source='formats', format=queue_bindings[q]['format'],
+                                       as_of=AS_OF['formats'], title_sets=title_sets,
+                                       legal_sets=overlay['legal_sets'], observation='no canonical printing set in recorded list'),
+                    restrictive_semantics='unestablished', applicability='unestablished'))
             effective = state
             why = reason
             if state != 'unknown' and not basic and restrictions:
                 effective, why = 'illegal', 'overlay_restriction'
-            per_queue[q] = dict(status=effective, reason=why, source_restrictions=restrictions)
+            elif disagreements:
+                effective, why = 'unknown', SET_DISAGREEMENT
+            per_queue[q] = dict(status=effective, reason=why, source_restrictions=restrictions,
+                                source_disagreements=disagreements)
         titles[str(tid)] = dict(name=card['name'], arena_ids=ids, base_state=state, base_reason=reason,
                                basic=basic, basic_evidence=basics.get(tid, []), source_conflicts=sorted(set(conflicts)),
                                exact_matches=matches, queues=per_queue)

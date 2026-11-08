@@ -7,7 +7,7 @@ import unittest
 from contextlib import contextmanager
 
 from mtgadb import canonical
-from mtgadb.standard_legality import (DETERMINATION, FINAL_AUTHORITY, LegalityError,
+from mtgadb.standard_legality import (DETERMINATION, FINAL_AUTHORITY, SET_DISAGREEMENT, LegalityError,
     assess, bindings, build_snapshot, load_snapshot, query, readonly, sha256)
 
 
@@ -200,14 +200,49 @@ class StandardLegalityTests(unittest.TestCase):
         self.assertFalse(result['titles']['1']['basic'])
         self.assertEqual(self.state(result), 'illegal')
 
-    def test_generic_set_restriction_and_exception(self):
+    def test_older_set_omission_is_unknown_without_semantics_and_applicability(self):
         with fixture_db(self.paths['candidate']) as c:
             c.execute("UPDATE printings SET set_code='OLD' WHERE title_id=1")
         result = self.result()
-        self.assertEqual(self.state(result), 'illegal')
-        self.assertEqual(result['titles']['1']['queues']['BO1']['source_restrictions'][0]['rule'], 'legal_sets')
+        for queue in ['BO1', 'BO3']:
+            row = result['titles']['1']['queues'][queue]
+            self.assertEqual(row['status'], 'unknown')
+            self.assertEqual(row['reason'], SET_DISAGREEMENT)
+            self.assertEqual(row['source_restrictions'], [])
+            evidence = row['source_disagreements'][0]
+            self.assertEqual(evidence['base_claim']['status'], 'legal')
+            self.assertEqual(evidence['base_claim']['exact_record_ids'], ['printing-1'])
+            self.assertEqual(evidence['overlay_claim']['as_of'], '2026-09-12')
+            self.assertEqual(evidence['overlay_claim']['title_sets'], ['OLD'])
+            self.assertEqual(evidence['restrictive_semantics'], 'unestablished')
+            self.assertEqual(evidence['applicability'], 'unestablished')
+        self.assertEqual(result['titles']['1']['base_state'], 'legal')
         self.ban('Standard', 1, 'allowed')
         self.assertEqual(self.state(self.result()), 'legal')
+
+    def test_affirmative_restriction_survives_set_disagreement(self):
+        with fixture_db(self.paths['candidate']) as c:
+            c.execute("UPDATE printings SET set_code='LATER' WHERE title_id=1")
+        self.ban('Standard', 1, 'banned')
+        self.ban('TraditionalStandard', 1, 'suspended')
+        result = self.result()
+        for queue, fmt, kind in [('BO1', 'Standard', 'banned'), ('BO3', 'TraditionalStandard', 'suspended')]:
+            row = result['titles']['1']['queues'][queue]
+            self.assertEqual(row['status'], 'illegal')
+            self.assertEqual(row['reason'], 'overlay_restriction')
+            self.assertEqual(row['source_restrictions'][0]['format'], fmt)
+            self.assertEqual(row['source_restrictions'][0]['rule'], kind)
+            self.assertEqual(row['source_restrictions'][0]['title_id'], 1)
+            self.assertTrue(row['source_disagreements'])
+
+    def test_queue_queries_and_unknown_queue_fail_closed(self):
+        self.ban('Standard', 1)
+        path = self.build()
+        self.assertEqual(query(path, 'BO1', title_id=1)['status'], 'illegal')
+        self.assertEqual(query(path, 'BO3', title_id=1)['status'], 'legal')
+        for queue in ['unknown', 'bo1', 'Standard', '']:
+            with self.assertRaises(LegalityError):
+                query(path, queue, title_id=1)
 
     def test_digital_and_faces_do_not_add_owned_cards(self):
         self.rows[0].update(digital=True, card_faces=[{'name': 'Front'}, {'name': 'Back'}])
