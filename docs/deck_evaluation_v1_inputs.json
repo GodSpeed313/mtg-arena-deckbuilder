@@ -1,0 +1,91 @@
+[
+  {
+    "id": "run21-bo1",
+    "request_id": "std-bo1",
+    "source_path": "C:\\MTG-Source-Preservation\\decks\\run21-20261107-bo1-final\\deck.txt",
+    "sha256": "eee31274f069a9dea6a32cbd2f41ba1e18b6886fa8bc87f68fda8d8a196ac860",
+    "queues": [
+      "BO1"
+    ],
+    "origin": "Run 21 generated baseline",
+    "encoding": "arena_text",
+    "generation_inputs": {
+      "format": "Standard",
+      "queue": "BO1"
+    },
+    "evidence": [
+      {
+        "source_path": "C:\\MTG-Source-Preservation\\decks\\run21-20261107-bo1-final\\report.json",
+        "sha256": "972fc84824812a2106f44482735f05264b9afec1f271de5b6bf29d66da24c0e6"
+      },
+      {
+        "source_path": "C:\\MTG-Source-Preservation\\decks\\run21-20261107-bo1-final\\run-metadata.json",
+        "sha256": "91cd739ae1a27be54596a1dfd577c3ce90c19ba15883dc32299f4f45336f9c07"
+      }
+    ]
+  },
+  {
+    "id": "run21-bo3",
+    "request_id": "std-bo3",
+    "source_path": "C:\\MTG-Source-Preservation\\decks\\run21-20261107-bo3-final\\deck.txt",
+    "sha256": "b2d9a1441f7a0086889783a220723a03c910a63637103bdb2b90bbc97d8c3e98",
+    "queues": [
+      "BO3"
+    ],
+    "origin": "Run 21 generated baseline",
+    "encoding": "arena_text",
+    "generation_inputs": {
+      "format": "Standard",
+      "queue": "BO3"
+    },
+    "evidence": [
+      {
+        "source_path": "C:\\MTG-Source-Preservation\\decks\\run21-20261107-bo3-final\\report.json",
+        "sha256": "feb97109c9c382cf91cdf2efa3a229d69781586c7a6c684f9b509811b5c6ad1a"
+      },
+      {
+        "source_path": "C:\\MTG-Source-Preservation\\decks\\run21-20261107-bo3-final\\run-metadata.json",
+        "sha256": "46c3217b9eab05d529083b4d52deea7d01e5e31dab733f2c76559e673b4c9c6d"
+      }
+    ]
+  },
+  {
+    "id": "crimson-forest",
+    "request_id": "reference",
+    "source_path": "C:\\Users\\User\\mtg-arena-deckbuilder\\tests\\fixtures\\benchmarks\\v2\\decks\\crimson_forest.json",
+    "sha256": "01c9d061f9a2a6f6ded26851390c8a3e929d3cd9ba890fce297ae540fa59c7fb",
+    "queues": [
+      "BO1",
+      "BO3"
+    ],
+    "queue_basis": "operator requested both assessments; historical queue unestablished",
+    "origin": "experienced-player calibration: Crimson Forest",
+    "encoding": "arena_json"
+  },
+  {
+    "id": "dragon-love",
+    "request_id": "reference",
+    "source_path": "C:\\Users\\User\\mtg-arena-deckbuilder\\tests\\fixtures\\benchmarks\\v1\\decks\\kevin_dragons.txt",
+    "sha256": "42e18d285c50642e31b2ce0ca4ccc1a2da5e7be2df0a2390fbddd45ef83e88c4",
+    "queues": [
+      "BO1",
+      "BO3"
+    ],
+    "queue_basis": "operator requested both assessments; historical queue unestablished",
+    "origin": "experienced-player calibration: Dragon Love",
+    "encoding": "arena_text"
+  },
+  {
+    "id": "earth-danger",
+    "request_id": "reference",
+    "source_path": "C:\\Users\\User\\Documents\\MTG-Deckbuilder-Measurements\\phase3-earth-danger-preregistration-v2-20261017T235732367432Z\\inputs\\Deck-A.arena.txt",
+    "sha256": "3296f9a77ec47abc073717b3e9fc014debe3e9f0b03e92f5c9d32ecec34dbf9c",
+    "queues": [
+      "BO1",
+      "BO3"
+    ],
+    "queue_basis": "operator requested both assessments; historical queue unestablished",
+    "origin": "experienced-player calibration: Earth Danger",
+    "encoding": "arena_text"
+  }
+]
