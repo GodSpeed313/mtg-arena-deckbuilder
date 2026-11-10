@@ -1,0 +1,28 @@
+{
+  "evaluation_set_version": 2,
+  "rubric_version": 1,
+  "protocol_version": 1,
+  "flag_version": 1,
+  "requests": {
+    "std-bo1": {"format": "Standard", "queue": "BO1", "color_pair": null},
+    "std-bo3": {"format": "Standard", "queue": "BO3", "color_pair": null},
+    "std-bo1-wu": {"format": "Standard", "queue": "BO1", "color_pair": "WU"},
+    "std-bo1-br": {"format": "Standard", "queue": "BO1", "color_pair": "BR"},
+    "std-bo1-gw": {"format": "Standard", "queue": "BO1", "color_pair": "GW"}
+  },
+  "color_pair_rule": {
+    "scope": "All zones must have known canonical color identity contained in the pair; canonical colors and every WUBRG symbol in mana cost or rules text must also be contained. Colorless is allowed. Missing identity fails closed.",
+    "minimum_nonland_copies_per_color": 8,
+    "counting": "Main-deck nonland copies count for each color in the union of canonical color identity, canonical colors, and colored mana symbols in costs and rules text. Multicolor and each hybrid alternative count for every contained color. Lands do not count.",
+    "precedence": "Additional exclusion only: never override legality, data-completeness, or existing color-identity restrictions."
+  },
+  "grading": {
+    "masked": "Four worksheets: frozen Generator A and new Generator B for each unchanged request. Deterministic shuffle; label key external only. No origin-revealing metadata or explanations.",
+    "open": "Three worksheets labeled by color-pair request ID, same structure and flag sets as masked worksheets.",
+    "rubric": "Version 1 unchanged; five dimensions scored 0-5 with why. No automatic quality verdicts.",
+    "protocol": "Version 1 unchanged. Pair only matching requests and versions; all five v2 requests reported. Generator A has no forced-color support; paired A/B comparisons apply only to the two shared requests, never fabricate A outputs for new requests.",
+    "session": "Second grading session. Prior familiarity with Generator A limits masking. Frozen Run 22 grades remain official v1 baseline; report both sessions separately, never merge.",
+    "privacy": "No worksheet-to-origin mapping in the repository. Keys remain outside the repository until grades are complete and frozen."
+  },
+  "registration": "Commit this definition before writing Generator B. Once implementation begins this commit is immutable; corrections require operator approval."
+}
