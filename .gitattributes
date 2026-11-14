@@ -1,0 +1,3 @@
+# Preserve the reviewed Run 24 document byte hashes across Windows checkouts.
+/docs/run24_prompt.txt text eol=lf
+/docs/run24_grading_protocol.md text eol=lf

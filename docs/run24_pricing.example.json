@@ -1,0 +1,10 @@
+{
+  "model": "claude-opus-5-5",
+  "currency": "USD",
+  "input_usd_per_million": null,
+  "output_usd_per_million": null,
+  "source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "verified_date": null,
+  "operator_confirmed": false,
+  "billing_mode": "standard global synchronous, no cache, no tools, no batch, no fast mode"
+}
