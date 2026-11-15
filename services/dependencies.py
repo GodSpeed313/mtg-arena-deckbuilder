@@ -133,6 +133,9 @@ def _reviewed_context(feature: dict) -> dict | None:
 def _context_matches_rule(feature: dict, context: dict, *, payoff: bool) -> bool:
     """Confirm that a feature ID agrees with its reviewed structured evidence."""
     rule_id = feature.get("rule_id")
+    if rule_id in {"type.noncreature_spell.v1", "trigger.noncreature_cast_boost.v1"}:
+        from services.spell_cast_boost import matches
+        return matches(feature, payoff=payoff)
     effect = context.get("effect")
     trigger = context["prerequisites"].get("trigger")
     costs = context["prerequisites"]["costs"]
@@ -309,8 +312,10 @@ def _acceptable_enablers(definition: DependencyDefinition, payoff: dict) -> tupl
             else definition.enabler_rule_ids)
 
 
-def dependency_findings(cards: list[dict]) -> list[dict]:
+def dependency_findings(cards: list[dict], *, profile="default") -> list[dict]:
     """Return active, zone-local compatibility facts from reviewed evidence."""
+    from services.spell_cast_boost import check_profile, boost_findings
+    check_profile(profile)
     findings = []
     for definition in DEPENDENCIES:
         scoped_cards = cards
@@ -348,7 +353,7 @@ def dependency_findings(cards: list[dict]) -> list[dict]:
                          "state": state, "explanation": definition.explanation,
                          "enabler_side": enabler, "payoff_side": payoff,
                          "compatible_pairs": pairs})
-    return findings
+    return findings + boost_findings(cards, profile=profile)
 
 
 def interaction_findings(cards: list[dict]) -> list[dict]:

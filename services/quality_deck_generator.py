@@ -20,11 +20,11 @@ DEMAND = {(b,c):n for b,c,n in SLOTS}
 PERMANENTS = {'Creature','Artifact','Enchantment','Planeswalker','Land','Battle'}
 
 
-def decorate(card):
+def decorate(card, *, profile="default", cast_evidence=None):
     c=dict(card)
     kw={f.name:c[f.name] for f in fields(Card) if f.name in c and c[f.name] is not None and f.name!='resolution'}
     kw['resolution']=Resolution.ANOMALY if c.get('anomaly_count') else Resolution.SINGLE
-    analysis=classify_card(Card(**kw))
+    analysis=classify_card(Card(**kw), profile=profile, cast_evidence=cast_evidence)
     c['analysis']=dict(analysis,quantity=1)
     c['slot']=(min(4,int(c['cmc'])),c['creature'])
     c['permanent']=bool(set(c['types'].split()) & PERMANENTS)
@@ -40,9 +40,9 @@ def decorate(card):
     return c
 
 
-def relationships(pool):
+def relationships(pool, *, profile="default"):
     graph=defaultdict(list)
-    for finding in dependency_findings([c['analysis'] for c in pool]):
+    for finding in dependency_findings([c['analysis'] for c in pool], profile=profile):
         for pair in finding['compatible_pairs']:
             a,b=pair['enabler_title_id'],pair['payoff_title_id']
             if a==b or pair['support']=='unestablished':
@@ -77,7 +77,9 @@ def quality(card, selected, cards, graph):
     for edge in graph.get(card['title_id'],[]):
         other=next(t for t in edge['cards'] if t!=card['title_id'])
         if selected.get(other,0):
-            if any(cards[t]['resource_evidence'] and not resource_context(cards[t],selected,cards)[0] for t in edge['cards']):
+            # Run 25: unrelated draw/ramp must not veto a cast-boost edge.
+            # Preserve resource penalties and gates for every existing family.
+            if edge['rule_id'] != 'dependency.noncreature_cast_boost.v1' and any(cards[t]['resource_evidence'] and not resource_context(cards[t],selected,cards)[0] for t in edge['cards']):
                 continue
             active.append(edge);partners[other].add(edge['rule_id'])
     if active:
@@ -131,22 +133,26 @@ def template(main, side, cards, target):
     return dict(status='FAIL' if violations else 'PASS',violations=violations,lands=lands,creatures=creatures,curve={str(b):sum(n for (v,c),n in actual.items() if v==b) for b in range(1,5)},interaction_minimum=target,interaction_scope='lower bound limited by grammar coverage; minimum 4 or available template-compatible capacity')
 
 
-def generate(paths,pins,request_id):
+def generate(paths,pins,request_id, *, profile="default"):
+    from services.spell_cast_boost import check_profile, EXPERIMENTAL, CONTRACT, load_cast_evidence
+    check_profile(profile)
     if request_id not in REQUESTS:raise ValueError('unregistered request')
     req=REQUESTS[request_id];pair=req['color_pair'];queue=req['queue']
     facts=read_facts(paths,pins,queue)
+    cast_facts = load_cast_evidence(paths["arena"]) if profile == EXPERIMENTAL else {}
     raw,basics,excluded=prepare(facts,queue)
     pool=[]
     for c in raw:
         if not allowed(c,pair):
             excluded.append(dict(title_id=c['title_id'],reasons=['color_identity_or_pair_exclusion']));continue
-        c=decorate(c)
+        c=decorate(c, profile=profile, cast_evidence=cast_facts.get(c["arena_id"]))
         if c['slot'] not in DEMAND:
             excluded.append(dict(title_id=c['title_id'],reasons=['outside_generator_b_template']));continue
         pool.append(c)
-    graph=relationships(pool)
+    graph=relationships(pool, profile=profile)
     colorsets=[pair] if pair else [''.join(c) for n in (1,2) for c in combinations(COLORS,n)]
     trials=[];measurements=[]
+    experimental_trials=[]
     for colors in colorsets:
         available=[c for c in pool if set(c['mechanical_colors'])<=set(colors)]
         capacities={slot:sum(c['limit'] for c in available if c['slot']==slot) for slot in DEMAND}
@@ -169,6 +175,9 @@ def generate(paths,pins,request_id):
                 measure['failures'].append(str(e));continue
             score=sum(n*quality(cards[t],main,cards,graph)[0] for t,n in main.items())
             trials.append((score,colors,tuple(t for t,n in sorted(main.items()) for _ in range(n)),main,target,available))
+            if profile == EXPERIMENTAL:
+                experimental_trials.append(dict(colors=colors, seed=list(seed), score=score,
+                    selected=dict(main), considered_seeds=[list(x) for x in seedlist]))
     if not trials:raise ValueError('request failed without relaxation: '+canonical(measurements))
     score,colors,_,main,target,available=min(trials,key=lambda x:(-x[0],len(x[1]),tuple(COLORS.index(c) for c in x[1]),x[2]))
     cards={c['title_id']:c for c in pool+basics};side=Counter();pips=Counter()
@@ -210,4 +219,19 @@ def generate(paths,pins,request_id):
             contributions[str(tid)]=dict(name=c['name'],quantity=n,score=value,contributions=evidence)
     source_files=['services/quality_deck_generator.py','services/evaluation_requests_v2.py','docs/evaluation_requests_v2.json']
     root=Path(__file__).resolve().parents[1]
-    return text,canonical(dict(generator='B',request_id=request_id,request=req,checks=checks,arena_compatibility='pending operator testing',contributions=contributions,selection_score=score,color_measurements=measurements,excluded=excluded,mana_allocation=allocation,nonbasic_lands='deferred',sideboard_shortfall_reason='insufficient remaining eligible copy capacity' if queue=='BO3' and sum(side.values())<15 else None,provenance=facts['provenance'],snapshot_version=facts['snapshot']['snapshot_version'],source_revision={f:hashlib.sha256((root/f).read_bytes()).hexdigest() for f in source_files},limitations='Heuristic quality is not demonstrated competitive strength. Unknown abilities add no positive recognition evidence. Conditional dependencies are potential, not established gameplay events.'))
+    experimental = {}
+    if profile == EXPERIMENTAL:
+        from services.spell_cast_boost import DEPENDENCY
+        unique = {(e['rule_id'], *e['cards']):e for edges in graph.values() for e in edges}
+        boosts = [e for e in unique.values() if e['rule_id']==DEPENDENCY]
+        experimental = dict(experimental_profile=profile, boost_evidence_contract=CONTRACT,
+            recognition=dict(pool_dependency_pair_counts=dict(Counter(k[0] for k in unique)),
+                boost_pairs=[dict(enabler=a, payoff=b) for rule,a,b in unique if rule==DEPENDENCY],
+                participant_names={str(t):cards[t]['name'] for e in boosts for t in e['cards']},
+                selected_main_boost_pairs=[e for e in boosts if all(main.get(t,0) for t in e['cards'])],
+                selected_sideboard_boost_pairs=[e for e in boosts if all(side.get(t,0) for t in e['cards'])]),
+            selection_trials=experimental_trials,
+            winning_trials=[x for x in experimental_trials if x['colors']==colors and x['selected']==dict(nonland)])
+        source_files += ['services/spell_cast_boost.py','services/abilities.py','services/intelligence.py',
+                         'services/dependencies.py','services/evidence_scope.py']
+    return text,canonical(dict(**experimental, generator='B',request_id=request_id,request=req,checks=checks,arena_compatibility='pending operator testing',contributions=contributions,selection_score=score,color_measurements=measurements,excluded=excluded,mana_allocation=allocation,nonbasic_lands='deferred',sideboard_shortfall_reason='insufficient remaining eligible copy capacity' if queue=='BO3' and sum(side.values())<15 else None,provenance=facts['provenance'],snapshot_version=facts['snapshot']['snapshot_version'],source_revision={f:hashlib.sha256((root/f).read_bytes()).hexdigest() for f in source_files},limitations='Heuristic quality is not demonstrated competitive strength. Unknown abilities add no positive recognition evidence. Conditional dependencies are potential, not established gameplay events.'))

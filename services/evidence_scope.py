@@ -297,7 +297,18 @@ def require_dependency_vocabulary(value, version):
     """Version 3 cannot carry the new qualified-combat evidence vocabulary."""
     if version not in ("3", "4"):
         raise ValueError("unsupported dependency evidence version")
-    if version == "4":
+    if isinstance(value, dict):
+        if ("boost_contract" in value or value.get("kind") == "temporary_self_pt_boost"
+                or value.get("rule_id") in {"type.noncreature_spell.v1", "trigger.noncreature_cast_boost.v1"}
+                or value.get("dependency_id") == "dependency.noncreature_cast_boost.v1"):
+            raise ValueError("experimental boost evidence cannot use historical versions")
+        if version == "4":
+            for item in value.values():
+                require_dependency_vocabulary(item, version)
+            return
+    elif version == "4" and isinstance(value, list):
+        for item in value:
+            require_dependency_vocabulary(item, version)
         return
     if isinstance(value, dict):
         if (value.get("kind") in {"intrinsic_creature_keyword", "put_player_poison_counters",

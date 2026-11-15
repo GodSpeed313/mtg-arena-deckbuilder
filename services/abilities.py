@@ -797,8 +797,11 @@ def decompose_abilities(
     card_types: str = "",
     canonical_anomaly: bool = False,
     grammar_version: str = "5",
+    profile: str = "default",
 ) -> tuple[Ability, ...]:
     """Return source-ordered ability records for one canonical card text."""
+    from services.spell_cast_boost import check_profile, parse_boost
+    check_profile(profile)
     if grammar_version not in ("5", "8"):
         raise ValueError("unsupported recognition grammar version")
     lines = tuple(line.strip() for line in rules_text.splitlines() if line.strip())
@@ -822,6 +825,10 @@ def decompose_abilities(
                     line, "ability", reason
                 ),),
             ))
+            continue
+        boost = parse_boost(line, index, card_name, types, profile=profile)
+        if boost is not None:
+            result.append(boost)
             continue
         result.append(_parse_line(
             line,

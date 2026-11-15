@@ -385,7 +385,9 @@ def _project_ability_features(
     return projected
 
 
-def classify_card(card: Card) -> dict:
+def classify_card(card: Card, *, profile="default", cast_evidence=None) -> dict:
+    from services.spell_cast_boost import check_profile, project_features, face_evidence
+    check_profile(profile)
     features = []
     types = set(card.types.split())
     permanent = bool(types & {"Creature", "Artifact", "Enchantment", "Land", "Planeswalker"})
@@ -451,9 +453,12 @@ def classify_card(card: Card) -> dict:
         card_name=card.name,
         card_types=card.types,
         canonical_anomaly=anomalous,
+        profile=profile if (face_evidence(cast_evidence) is not None
+                            and cast_evidence["TitleId"] == card.title_id and not card.anomaly_count) else "default",
     )
     projected_features = _project_ability_features(abilities, permanent=permanent)
     features.extend(projected_features)
+    features.extend(project_features(card, abilities, cast_evidence, profile=profile))
     if "Creature" in types:
         for ability in abilities:
             for keyword in ability.keywords:
