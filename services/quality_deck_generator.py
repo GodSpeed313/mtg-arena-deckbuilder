@@ -37,6 +37,9 @@ def decorate(card, *, profile="default", cast_evidence=None):
     c['resource_evidence']=[f for f in analysis['features'] if f['label'] in ('ramp','mana_fixing','card_draw','card_selection') and f['dimension']=='role'] if c['permanent'] else []
     c['resource_evidence'] += [a for a in c['recognized'] if any(e['kind']=='draw' for e in a['effects'])] if c['permanent'] else []
     c['sink']=any(a['kind']=='activated' and a['effects'] and any(x['kind']=='mana' for x in a['costs']) for a in c['recognized'])
+    if profile == 'experimental-spell-cast-boost-v1':
+        from services.spell_support_guard import casting_category
+        c['support_category'] = casting_category(c)
     return c
 
 
@@ -73,7 +76,7 @@ def quality(card, selected, cards, graph):
         add('body.printed_stats',stat,'general heuristic',dict(power=pt[0],toughness=pt[1],cap=4))
     if card['interaction']:
         add('interaction.reviewed',4,'recognized card text',card['interaction_evidence'])
-    active=[]; partners=defaultdict(set)
+    active=[]; partners=defaultdict(set); boost_partners=set()
     for edge in graph.get(card['title_id'],[]):
         other=next(t for t in edge['cards'] if t!=card['title_id'])
         if selected.get(other,0):
@@ -81,10 +84,19 @@ def quality(card, selected, cards, graph):
             # Preserve resource penalties and gates for every existing family.
             if edge['rule_id'] != 'dependency.noncreature_cast_boost.v1' and any(cards[t]['resource_evidence'] and not resource_context(cards[t],selected,cards)[0] for t in edge['cards']):
                 continue
-            active.append(edge);partners[other].add(edge['rule_id'])
-    if active:
+            active.append(edge)
+            if edge['rule_id'] == 'dependency.noncreature_cast_boost.v1' and edge['cards'][1] == card['title_id']:
+                boost_partners.add(other)
+            else:
+                partners[other].add(edge['rule_id'])
+    if partners:
         n=sum(min(selected[t],4) for t in partners)
-        add('coherence.compatible_dependencies',min(12,2*n),'inferred relationship',active)
+        legacy=[e for e in active if not (e['rule_id']=='dependency.noncreature_cast_boost.v1' and e['cards'][1]==card['title_id'])]
+        add('coherence.compatible_dependencies',min(12,2*n),'inferred relationship',legacy)
+    if boost_partners:
+        from services.spell_support_guard import assess
+        support=assess(selected,cards,boost_partners)
+        add('coherence.spell_support_guard',support['bonus'],'inferred relationship',support)
     # Multiple dependencies must actually share a participant, not merely coexist.
     if len({e['rule_id'] for e in active})>=2:
         add('hybrid.shared_enabler_or_payoff',2,'inferred relationship',dict(shared_title_id=card['title_id'],relationships=active))
@@ -233,5 +245,6 @@ def generate(paths,pins,request_id, *, profile="default"):
             selection_trials=experimental_trials,
             winning_trials=[x for x in experimental_trials if x['colors']==colors and x['selected']==dict(nonland)])
         source_files += ['services/spell_cast_boost.py','services/abilities.py','services/intelligence.py',
-                         'services/dependencies.py','services/evidence_scope.py']
+                         'services/dependencies.py','services/evidence_scope.py','services/spell_support_guard.py']
+        experimental['support_guard_version']='run27-support.1'
     return text,canonical(dict(**experimental, generator='B',request_id=request_id,request=req,checks=checks,arena_compatibility='pending operator testing',contributions=contributions,selection_score=score,color_measurements=measurements,excluded=excluded,mana_allocation=allocation,nonbasic_lands='deferred',sideboard_shortfall_reason='insufficient remaining eligible copy capacity' if queue=='BO3' and sum(side.values())<15 else None,provenance=facts['provenance'],snapshot_version=facts['snapshot']['snapshot_version'],source_revision={f:hashlib.sha256((root/f).read_bytes()).hexdigest() for f in source_files},limitations='Heuristic quality is not demonstrated competitive strength. Unknown abilities add no positive recognition evidence. Conditional dependencies are potential, not established gameplay events.'))
