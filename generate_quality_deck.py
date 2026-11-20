@@ -14,12 +14,13 @@ def main(argv=None):
     p.add_argument('--output',type=Path,required=True)
     from services.spell_cast_boost import PROFILES
     p.add_argument("--profile", choices=PROFILES, default="default")
+    p.add_argument('--flexible-slots', action='store_true', help='Opt in to frozen Run 28 flexible slots (experimental profile only)')
     a=p.parse_args(argv)
     requests=[k for k,v in REQUESTS.items() if v==dict(format=a.format,queue=a.queue,color_pair=a.color_pair)]
     if len(requests)!=1:p.error('unregistered format/queue/color-pair request')
     out=a.output.resolve();root=Path('C:/MTG-Source-Preservation/evaluations').resolve()
     if root not in out.parents or out.exists():p.error('output must be new and outside repository under evaluations')
-    text,report=generate(dict(snapshot=SNAPSHOT,database=DATABASE,arena=ARENA),PINS,requests[0],profile=a.profile)
+    text,report=generate(dict(snapshot=SNAPSHOT,database=DATABASE,arena=ARENA),PINS,requests[0],profile=a.profile,flexible_slots=a.flexible_slots)
     out.mkdir(parents=True,exist_ok=False)
     (out/'deck.txt').write_text(text,encoding='utf-8',newline='\n')
     (out/'report.json').write_text(report,encoding='utf-8',newline='\n')

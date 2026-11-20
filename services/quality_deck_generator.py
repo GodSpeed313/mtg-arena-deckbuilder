@@ -106,13 +106,13 @@ def quality(card, selected, cards, graph):
     return sum(x['numeric_contribution'] for x in evidence),evidence
 
 
-def build_main(pool, graph, pair, seed=()):
-    cards={c['title_id']:c for c in pool}; main=Counter(); remaining=dict(DEMAND)
+def build_main(pool, graph, pair, seed=(), *, flexible_slots=False, flex_only=(), flex_record=None):
+    cards={c['title_id']:c for c in [*pool,*flex_only]}; main=Counter(); remaining=dict(DEMAND)
     interaction_target=min(4,sum(c['limit'] for c in pool if c['interaction']))
     def choices(predicate=lambda c:True):
         return [c for c in pool if remaining.get(c['slot'],0)>0 and main[c['title_id']]<c['limit'] and predicate(c)]
-    def put(c):
-        main[c['title_id']]+=1;remaining[c['slot']]-=1
+    def put(c, destination=None):
+        main[c['title_id']]+=1;remaining[c['slot'] if destination is None else destination]-=1
     def best(options):
         if not options:raise ValueError('no candidate can meet remaining registered template constraints')
         return min(options,key=lambda c:(-quality(c,main,cards,graph)[0],c['cmc'],c['title_id']))
@@ -125,8 +125,27 @@ def build_main(pool, graph, pair, seed=()):
         for color in pair:
             while sum(n for t,n in main.items() if color in cards[t]['mechanical_colors'])<8:
                 put(best(choices(lambda c:color in c['mechanical_colors'])))
+    if flexible_slots:
+        from services.flexible_slots import PROFILE, POLICY, decision_record
+        if flex_record is None:
+            raise ValueError('flex record required')
+        flex_record.update(profile=PROFILE, assignments=[], decisions=[],
+                           forfeited_by_bucket={str(b):int(remaining[(b,True)]==0)
+                                                for b,_ in POLICY['flex_allocation']})
     for bucket,creature,needed in SLOTS:
         while remaining[(bucket,creature)]:
+            if flexible_slots and creature and remaining[(bucket,True)]==1:
+                options=choices(lambda c:c['slot']==(bucket,True))
+                options += [c for c in [*pool,*flex_only] if c['slot']==(bucket,False)
+                            and main[c['title_id']]<c['limit']]
+                winner=best(options)
+                other=[c for c in options if c['creature'] != winner['creature']]
+                flex_record['decisions'].append(decision_record(
+                    bucket,winner,best(other) if other else None,main,cards,graph,quality))
+                if not winner['creature']:
+                    flex_record['assignments'].append(dict(bucket=bucket,title_id=winner['title_id'],quantity=1))
+                put(winner,(bucket,True))
+                continue
             put(best(choices(lambda c:c['slot']==(bucket,creature))))
     return main,interaction_target
 
@@ -145,28 +164,33 @@ def template(main, side, cards, target):
     return dict(status='FAIL' if violations else 'PASS',violations=violations,lands=lands,creatures=creatures,curve={str(b):sum(n for (v,c),n in actual.items() if v==b) for b in range(1,5)},interaction_minimum=target,interaction_scope='lower bound limited by grammar coverage; minimum 4 or available template-compatible capacity')
 
 
-def generate(paths,pins,request_id, *, profile="default"):
+def generate(paths,pins,request_id, *, profile="default", flexible_slots=False):
     from services.spell_cast_boost import check_profile, EXPERIMENTAL, CONTRACT, load_cast_evidence
     check_profile(profile)
+    if type(flexible_slots) is not bool or (flexible_slots and profile != EXPERIMENTAL):
+        raise ValueError('flexible slots require an explicit boolean opt-in in the experimental profile')
     if request_id not in REQUESTS:raise ValueError('unregistered request')
     req=REQUESTS[request_id];pair=req['color_pair'];queue=req['queue']
     facts=read_facts(paths,pins,queue)
     cast_facts = load_cast_evidence(paths["arena"]) if profile == EXPERIMENTAL else {}
     raw,basics,excluded=prepare(facts,queue)
-    pool=[]
+    pool=[]; flex_only=[]
     for c in raw:
         if not allowed(c,pair):
             excluded.append(dict(title_id=c['title_id'],reasons=['color_identity_or_pair_exclusion']));continue
         c=decorate(c, profile=profile, cast_evidence=cast_facts.get(c["arena_id"]))
         if c['slot'] not in DEMAND:
+            if flexible_slots and c['slot']==(1,False):
+                flex_only.append(c);continue
             excluded.append(dict(title_id=c['title_id'],reasons=['outside_generator_b_template']));continue
         pool.append(c)
-    graph=relationships(pool, profile=profile)
+    graph=relationships(pool+flex_only, profile=profile)
     colorsets=[pair] if pair else [''.join(c) for n in (1,2) for c in combinations(COLORS,n)]
     trials=[];measurements=[]
     experimental_trials=[]
     for colors in colorsets:
         available=[c for c in pool if set(c['mechanical_colors'])<=set(colors)]
+        available_flex=[c for c in flex_only if set(c['mechanical_colors'])<=set(colors)]
         capacities={slot:sum(c['limit'] for c in available if c['slot']==slot) for slot in DEMAND}
         fills=[min(Fraction(capacities[s],n),1) for s,n in DEMAND.items()]
         measure=dict(colors=colors,slot_fractions=[str(x) for x in fills],primary_sufficiency=str(sum(fills)/len(fills)),failures=[])
@@ -180,19 +204,22 @@ def generate(paths,pins,request_id, *, profile="default"):
                 if set(edge['cards'])<=ids:seeds.add(tuple(edge['cards']))
         # Bounded deterministic seed exploration, never name-based.
         seedlist=[()]+sorted(s for s in seeds if s)[:8]
-        cards={c['title_id']:c for c in available}
+        cards={c['title_id']:c for c in available+available_flex}
         for seed in seedlist:
-            try:main,target=build_main(available,graph,pair,seed)
+            flex_record={}
+            try:main,target=build_main(available,graph,pair,seed,
+                                      flexible_slots=flexible_slots,flex_only=available_flex,
+                                      flex_record=flex_record)
             except ValueError as e:
                 measure['failures'].append(str(e));continue
             score=sum(n*quality(cards[t],main,cards,graph)[0] for t,n in main.items())
-            trials.append((score,colors,tuple(t for t,n in sorted(main.items()) for _ in range(n)),main,target,available))
+            trials.append((score,colors,tuple(t for t,n in sorted(main.items()) for _ in range(n)),main,target,available,flex_record))
             if profile == EXPERIMENTAL:
                 experimental_trials.append(dict(colors=colors, seed=list(seed), score=score,
                     selected=dict(main), considered_seeds=[list(x) for x in seedlist]))
     if not trials:raise ValueError('request failed without relaxation: '+canonical(measurements))
-    score,colors,_,main,target,available=min(trials,key=lambda x:(-x[0],len(x[1]),tuple(COLORS.index(c) for c in x[1]),x[2]))
-    cards={c['title_id']:c for c in pool+basics};side=Counter();pips=Counter()
+    score,colors,_,main,target,available,flex_record=min(trials,key=lambda x:(-x[0],len(x[1]),tuple(COLORS.index(c) for c in x[1]),x[2]))
+    cards={c['title_id']:c for c in pool+flex_only+basics};side=Counter();pips=Counter()
     for tid,n in main.items():
         for token in cards[tid]['tokens']:
             if token in COLORS:pips[token]+=n
@@ -218,7 +245,12 @@ def generate(paths,pins,request_id, *, profile="default"):
             c=cards[tid];p=c['printing'];lines.append(f"{n} {c['name']} ({p['set_code']}) {p['collector_number']}")
             rows.append(dict(card=c,quantity=n,zone=zone))
     text='\n'.join(lines)+'\n'
-    checks=dict(legality=validate_text(text,paths,pins,queue),template=template(main,side,cards,target),color_pair=check_pair(rows,pair))
+    if flexible_slots:
+        from services.flexible_slots import PROFILE, validate_template
+        template_result=validate_template(main,side,cards,target,flex_record['assignments'],profile=PROFILE)
+    else:
+        template_result=template(main,side,cards,target)
+    checks=dict(legality=validate_text(text,paths,pins,queue),template=template_result,color_pair=check_pair(rows,pair))
     if any(v['status']=='FAIL' for v in checks.values()):raise ValueError('validation failed: '+canonical(checks))
     contributions={}
     for tid,n in (main+side).items():
@@ -247,4 +279,7 @@ def generate(paths,pins,request_id, *, profile="default"):
         source_files += ['services/spell_cast_boost.py','services/abilities.py','services/intelligence.py',
                          'services/dependencies.py','services/evidence_scope.py','services/spell_support_guard.py']
         experimental['support_guard_version']='run27-support.1'
+    if flexible_slots:
+        experimental['flexible_slots']=flex_record
+        source_files.append('services/flexible_slots.py')
     return text,canonical(dict(**experimental, generator='B',request_id=request_id,request=req,checks=checks,arena_compatibility='pending operator testing',contributions=contributions,selection_score=score,color_measurements=measurements,excluded=excluded,mana_allocation=allocation,nonbasic_lands='deferred',sideboard_shortfall_reason='insufficient remaining eligible copy capacity' if queue=='BO3' and sum(side.values())<15 else None,provenance=facts['provenance'],snapshot_version=facts['snapshot']['snapshot_version'],source_revision={f:hashlib.sha256((root/f).read_bytes()).hexdigest() for f in source_files},limitations='Heuristic quality is not demonstrated competitive strength. Unknown abilities add no positive recognition evidence. Conditional dependencies are potential, not established gameplay events.'))
